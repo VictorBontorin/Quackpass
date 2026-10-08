@@ -12,10 +12,10 @@ type Result = {
 };
 
 const colors: Record<Result["result"], string> = {
-  ok: "border-emerald-500 bg-emerald-950 text-emerald-100",
-  used: "border-amber-500 bg-amber-950 text-amber-100",
-  invalid: "border-red-500 bg-red-950 text-red-100",
-  error: "border-red-500 bg-red-950 text-red-100",
+  ok: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  used: "border-amber-200 bg-amber-50 text-amber-800",
+  invalid: "border-red-200 bg-red-50 text-red-700",
+  error: "border-red-200 bg-red-50 text-red-700",
 };
 
 export function Scanner({ eventId, initialUsed, total }: { eventId: string; initialUsed: number; total: number }) {
@@ -93,9 +93,9 @@ export function Scanner({ eventId, initialUsed, total }: { eventId: string; init
     <div className="mx-auto max-w-lg space-y-4">
       <div className="card flex items-center justify-between">
         <div>
-          <p className="text-xs uppercase text-neutral-500">Entraram</p>
+          <p className="text-xs uppercase text-slate-500">Entraram</p>
           <p className="text-3xl font-black">
-            {used} <span className="text-base font-normal text-neutral-500">/ {total}</span>
+            {used} <span className="text-base font-normal text-slate-500">/ {total}</span>
           </p>
         </div>
         <button className="btn-primary" onClick={() => setCameraOn((v) => !v)}>
@@ -104,7 +104,7 @@ export function Scanner({ eventId, initialUsed, total }: { eventId: string; init
       </div>
 
       <div id="qr-reader" className={`overflow-hidden rounded-2xl ${cameraOn ? "" : "hidden"}`} />
-      {cameraError && <p className="text-sm text-red-400">{cameraError}</p>}
+      {cameraError && <p className="text-sm text-red-700">{cameraError}</p>}
 
       {last && (
         <div className={`rounded-2xl border-2 p-5 text-center ${colors[last.result]}`}>
@@ -142,7 +142,7 @@ export function Scanner({ eventId, initialUsed, total }: { eventId: string; init
               <span className="truncate">
                 {h.result === "ok" ? "✅" : h.result === "used" ? "⚠️" : "❌"} {h.holderName ?? h.code}
               </span>
-              <span className="whitespace-nowrap text-neutral-500">{new Date(h.at).toLocaleTimeString("pt-BR")}</span>
+              <span className="whitespace-nowrap text-slate-500">{new Date(h.at).toLocaleTimeString("pt-BR")}</span>
             </div>
           ))}
         </div>

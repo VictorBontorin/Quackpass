@@ -22,9 +22,9 @@ export default function LoginPage() {
           Entrar
         </SubmitButton>
       </ActionForm>
-      <p className="mt-4 text-center text-sm text-neutral-400">
+      <p className="mt-4 text-center text-sm text-slate-500">
         Ainda não vende com a gente?{" "}
-        <Link href="/produtor/cadastro" className="text-brand-400">
+        <Link href="/produtor/cadastro" className="text-brand-600">
           Cadastre-se
         </Link>
       </p>

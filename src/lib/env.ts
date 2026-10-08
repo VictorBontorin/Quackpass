@@ -10,4 +10,8 @@ export const env = {
   platformFeeMinCents: num("PLATFORM_FEE_MIN_CENTS", 300),
   reservationMinutes: num("ORDER_RESERVATION_MINUTES", 15),
   paymentProvider: (process.env.PAYMENT_PROVIDER ?? "mock") as "mock" | "pagarme",
+  companyName: process.env.COMPANY_NAME ?? "Quackpass",
+  companyLegalName: process.env.COMPANY_LEGAL_NAME ?? "",
+  companyCnpj: process.env.COMPANY_CNPJ ?? "",
+  supportEmail: process.env.SUPPORT_EMAIL ?? "contato@quackpass.com.br",
 };

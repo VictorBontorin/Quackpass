@@ -1,7 +1,7 @@
-import type { Batch, Coupon, FeePayer } from "@prisma/client";
+import type { Batch, Coupon, DiscountType, FeePayer } from "@prisma/client";
 import { env } from "./env";
 
-export type CartLine = { batch: Pick<Batch, "id" | "priceCents" | "halfPriceCents">; quantity: number; half: boolean };
+export type CartLine = { batch: Pick<Batch, "id" | "priceCents">; quantity: number };
 
 export type Pricing = {
   subtotalCents: number;
@@ -11,14 +11,6 @@ export type Pricing = {
   producerCents: number;
   platformCents: number;
 };
-
-export function unitPrice(line: CartLine): number {
-  if (line.half) {
-    if (line.batch.halfPriceCents == null) throw new Error("Este lote não tem meia-entrada");
-    return line.batch.halfPriceCents;
-  }
-  return line.batch.priceCents;
-}
 
 export function couponDiscount(coupon: Pick<Coupon, "discountType" | "value"> | null, subtotalCents: number): number {
   if (!coupon || subtotalCents <= 0) return 0;
@@ -39,10 +31,10 @@ export function calculatePricing(
   feePayer: FeePayer,
   opts = { percent: env.platformFeePercent, minCents: env.platformFeeMinCents },
 ): Pricing {
-  const subtotalCents = lines.reduce((s, l) => s + unitPrice(l) * l.quantity, 0);
+  const subtotalCents = lines.reduce((s, l) => s + l.batch.priceCents * l.quantity, 0);
   const discountCents = couponDiscount(coupon, subtotalCents);
   const net = subtotalCents - discountCents;
-  const paidTickets = lines.reduce((s, l) => s + (unitPrice(l) > 0 ? l.quantity : 0), 0);
+  const paidTickets = lines.reduce((s, l) => s + (l.batch.priceCents > 0 ? l.quantity : 0), 0);
 
   let feeCents = net > 0 ? Math.max(Math.round((net * opts.percent) / 100), opts.minCents * paidTickets) : 0;
 
@@ -52,6 +44,24 @@ export function calculatePricing(
   // Produtor absorve: a taxa nunca pode passar do valor líquido
   feeCents = Math.min(feeCents, net);
   return { subtotalCents, discountCents, feeCents, totalCents: net, producerCents: net - feeCents, platformCents: feeCents };
+}
+
+export type Commission = { commissionType: DiscountType; commissionValue: number };
+
+/**
+ * Comissão do anunciante sobre a venda. PERCENT em centésimos de % sobre o valor dos
+ * ingressos já com desconto (sem a taxa de serviço); FIXED em centavos por ingresso pago.
+ */
+export function calculateCommission(commission: Commission | null, netTicketsCents: number, paidTickets: number): number {
+  if (!commission || commission.commissionValue <= 0 || netTicketsCents <= 0) return 0;
+  if (commission.commissionType === "PERCENT") return Math.round((netTicketsCents * commission.commissionValue) / 10_000);
+  return Math.min(commission.commissionValue * paidTickets, netTicketsCents);
+}
+
+export function formatCommission(c: Commission | null): string {
+  if (!c || c.commissionValue <= 0) return "Sem comissão";
+  if (c.commissionType === "PERCENT") return `${(c.commissionValue / 100).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}% por venda`;
+  return `${(c.commissionValue / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} por ingresso`;
 }
 
 /** Lote "da vez" de cada tipo: o primeiro ativo, dentro da janela de vendas e com estoque. */

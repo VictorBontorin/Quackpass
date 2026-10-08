@@ -1,15 +1,15 @@
 const styles: Record<string, [string, string]> = {
-  DRAFT: ["Rascunho", "bg-neutral-800 text-neutral-300"],
-  PUBLISHED: ["À venda", "bg-emerald-950 text-emerald-300"],
-  CANCELLED: ["Cancelado", "bg-red-950 text-red-300"],
-  PENDING: ["Aguardando", "bg-amber-950 text-amber-300"],
-  PAID: ["Pago", "bg-emerald-950 text-emerald-300"],
-  FAILED: ["Recusado", "bg-red-950 text-red-300"],
-  EXPIRED: ["Expirado", "bg-neutral-800 text-neutral-400"],
-  REFUNDED: ["Estornado", "bg-purple-950 text-purple-300"],
+  DRAFT: ["Rascunho", "bg-slate-100 text-slate-700"],
+  PUBLISHED: ["À venda", "bg-emerald-50 text-emerald-700"],
+  CANCELLED: ["Cancelado", "bg-red-50 text-red-700"],
+  PENDING: ["Aguardando", "bg-amber-50 text-amber-800"],
+  PAID: ["Pago", "bg-emerald-50 text-emerald-700"],
+  FAILED: ["Recusado", "bg-red-50 text-red-700"],
+  EXPIRED: ["Expirado", "bg-slate-100 text-slate-500"],
+  REFUNDED: ["Reembolsado", "bg-purple-50 text-purple-700"],
 };
 
 export function StatusBadge({ status }: { status: string }) {
-  const [label, cls] = styles[status] ?? [status, "bg-neutral-800"];
+  const [label, cls] = styles[status] ?? [status, "bg-slate-100"];
   return <span className={`badge ${cls}`}>{label}</span>;
 }

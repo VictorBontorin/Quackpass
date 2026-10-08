@@ -1,0 +1,25 @@
+import type { Batch, TicketType } from "@prisma/client";
+import type { CheckoutTicketType } from "@/app/evento/[slug]/Checkout";
+import { env } from "./env";
+import { currentBatch } from "./pricing";
+
+export function ticketTypesForCheckout(types: (TicketType & { batches: Batch[] })[]): CheckoutTicketType[] {
+  return types.map((t) => {
+    const b = currentBatch(t.batches);
+    return {
+      id: t.id,
+      name: t.name,
+      description: t.description,
+      soldOut: t.batches.length > 0 && t.batches.every((x) => x.sold >= x.quantity),
+      batch: b && { id: b.id, name: b.name, priceCents: b.priceCents, maxPerOrder: Math.min(b.maxPerOrder, b.quantity - b.sold) },
+    };
+  });
+}
+
+export function checkoutConfig() {
+  return {
+    fee: { percent: env.platformFeePercent, minCents: env.platformFeeMinCents },
+    provider: env.paymentProvider,
+    pagarmePublicKey: process.env.PAGARME_PUBLIC_KEY ?? "",
+  };
+}

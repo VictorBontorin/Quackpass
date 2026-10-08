@@ -5,7 +5,7 @@ import { EventForm } from "@/app/painel/EventForm";
 export default async function EditEventPage({ params }: { params: { id: string } }) {
   const { event } = await requireOwnedEvent(params.id);
   return (
-    <div className="max-w-2xl">
+    <div className="max-w-3xl">
       <EventForm action={updateEvent.bind(null, event.id)} event={event} submitLabel="Salvar alterações" />
     </div>
   );

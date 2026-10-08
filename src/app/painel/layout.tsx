@@ -8,9 +8,9 @@ export default async function PanelLayout({ children }: { children: React.ReactN
   const producer = await requireProducer();
   return (
     <div className="container-page py-6">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-neutral-900 pb-4">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4">
         <div>
-          <p className="text-xs uppercase text-neutral-500">Painel do produtor</p>
+          <p className="text-xs uppercase text-slate-500">Painel do produtor</p>
           <p className="font-bold">{producer.name}</p>
         </div>
         <nav className="flex flex-wrap items-center gap-2 text-sm">
@@ -24,12 +24,12 @@ export default async function PanelLayout({ children }: { children: React.ReactN
             Recebimento
           </Link>
           <form action={logout}>
-            <button className="btn text-neutral-400 hover:text-white">Sair</button>
+            <button className="btn text-slate-500 hover:text-slate-900">Sair</button>
           </form>
         </nav>
       </div>
       {!producer.recipientId && (
-        <Link href="/painel/conta" className="card mb-6 block border-brand-700 bg-brand-700/10 text-sm">
+        <Link href="/painel/conta" className="card mb-6 block border-brand-200 bg-brand-50 text-sm">
           ⚠️ Cadastre sua conta bancária para começar a receber pelas vendas →
         </Link>
       )}

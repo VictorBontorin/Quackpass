@@ -26,14 +26,39 @@ async function main() {
       producerId: producer.id,
       slug: "4-anos-folks-curitiba",
       title: "4 Anos Folks Curitiba",
-      description: "A maior festa do ano! Open bar até 1h, 3 pistas e convidados especiais.",
+      description:
+        "A maior festa do ano está chegando! Para comemorar 4 anos de casa, preparamos **3 ambientes**, open bar e convidados especiais.\n\n- Open bar de chopp e drinks até 1h\n- 3 pistas: sertanejo, funk e eletrônica\n- Área VIP com camarote",
       venueName: "Folks Bar",
-      address: "Rua Exemplo, 123",
+      address: "Rua Exemplo, 123 - Batel",
       city: "Curitiba",
       state: "PR",
       startsAt,
-      minAge: 18,
       status: "PUBLISHED",
+      accentColor: "#7c3aed",
+      contactPhone: "(41) 99999-9999",
+      contactEmail: "contato@folksbar.com.br",
+      contactInstagram: "folksbar",
+      refundMode: "SELF_SERVICE",
+      refundDeadlineHours: 48,
+      content: [
+        {
+          type: "lineup",
+          title: "Atrações",
+          items: [
+            { name: "DJ Alok Cover", detail: "23h" },
+            { name: "Banda Sertaneja Raiz", detail: "00h30" },
+            { name: "MC Convidado", detail: "02h" },
+          ],
+        },
+        {
+          type: "faq",
+          title: "Perguntas frequentes",
+          items: [
+            { q: "Qual a idade mínima?", a: "18 anos, com documento oficial com foto." },
+            { q: "Tem estacionamento?", a: "Sim, conveniado ao lado da casa." },
+          ],
+        },
+      ],
       ticketTypes: {
         create: [
           {
@@ -41,8 +66,8 @@ async function main() {
             sortOrder: 0,
             batches: {
               create: [
-                { name: "1º lote", priceCents: 4000, halfPriceCents: 2000, quantity: 100, sortOrder: 0 },
-                { name: "2º lote", priceCents: 6000, halfPriceCents: 3000, quantity: 200, sortOrder: 1 },
+                { name: "1º lote", priceCents: 4000, quantity: 100, sortOrder: 0 },
+                { name: "2º lote", priceCents: 6000, quantity: 200, sortOrder: 1 },
               ],
             },
           },
@@ -57,7 +82,10 @@ async function main() {
     },
   });
 
-  const wesley = await db.advertiser.create({ data: { producerId: producer.id, name: "Wesley Promoter", instagram: "@wesley" } });
+  // Wesley ganha 10% por venda
+  const wesley = await db.advertiser.create({
+    data: { producerId: producer.id, name: "Wesley Promoter", instagram: "@wesley", commissionType: "PERCENT", commissionValue: 1000 },
+  });
   await db.coupon.create({ data: { eventId: event.id, advertiserId: wesley.id, code: "WESLEY", discountType: "PERCENT", value: 10 } });
   console.log("Seed ok:", event.slug);
 }

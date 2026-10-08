@@ -2,9 +2,10 @@ import { Prisma, type PaymentMethod } from "@prisma/client";
 import { z } from "zod";
 import { db } from "./db";
 import { env } from "./env";
+import { safely, sendRefundEmail, sendTicketsEmail } from "./email";
 import { onlyDigits } from "./format";
 import { paymentProvider, type CardInput } from "./payments";
-import { calculatePricing, currentBatch, type CartLine } from "./pricing";
+import { calculateCommission, calculatePricing, currentBatch, type CartLine } from "./pricing";
 import { newTicketCode } from "./tickets";
 
 export class CheckoutError extends Error {}
@@ -12,7 +13,7 @@ export class CheckoutError extends Error {}
 export const checkoutSchema = z.object({
   eventId: z.string().min(1),
   items: z
-    .array(z.object({ batchId: z.string().min(1), quantity: z.number().int().min(1).max(50), half: z.boolean().default(false) }))
+    .array(z.object({ batchId: z.string().min(1), quantity: z.number().int().min(1).max(50) }))
     .min(1)
     .max(20),
   couponCode: z.string().trim().max(40).optional(),
@@ -22,6 +23,7 @@ export const checkoutSchema = z.object({
     document: z.string().transform(onlyDigits).pipe(z.string().regex(/^(\d{11}|\d{14})$/, "CPF/CNPJ inválido")),
     phone: z.string().transform(onlyDigits).pipe(z.string().min(10).max(13)),
   }),
+  ageConfirmed: z.literal(true, { errorMap: () => ({ message: "Confirme que tem 18 anos ou mais" }) }),
   paymentMethod: z.enum(["PIX", "CREDIT_CARD", "DEBIT_CARD"]),
   installments: z.number().int().min(1).max(12).default(1),
   card: z.object({ token: z.string().min(1) }).optional(),
@@ -56,11 +58,9 @@ export async function createOrder(input: CheckoutInput) {
   if ((event.endsAt ?? event.startsAt) < new Date()) throw new CheckoutError("Este evento já aconteceu");
 
   // Agrupa itens repetidos
-  const merged = new Map<string, { batchId: string; quantity: number; half: boolean }>();
+  const merged = new Map<string, { batchId: string; quantity: number }>();
   for (const it of input.items) {
-    const key = `${it.batchId}:${it.half}`;
-    const prev = merged.get(key);
-    merged.set(key, { ...it, quantity: (prev?.quantity ?? 0) + it.quantity });
+    merged.set(it.batchId, { batchId: it.batchId, quantity: (merged.get(it.batchId)?.quantity ?? 0) + it.quantity });
   }
 
   const lines: (CartLine & { description: string })[] = [];
@@ -70,16 +70,23 @@ export async function createOrder(input: CheckoutInput) {
     const batch = type?.batches.find((b) => b.id === it.batchId);
     if (!type || !batch) throw new CheckoutError("Ingresso inválido");
     if (currentBatch(type.batches)?.id !== batch.id) throw new CheckoutError(`${type.name} - ${batch.name} não está mais à venda`);
-    if (it.half && batch.halfPriceCents == null) throw new CheckoutError("Meia-entrada indisponível para este lote");
     perBatch.set(batch.id, (perBatch.get(batch.id) ?? 0) + it.quantity);
     if (perBatch.get(batch.id)! > batch.maxPerOrder) throw new CheckoutError(`Máximo de ${batch.maxPerOrder} por pedido em ${type.name}`);
-    lines.push({ batch, quantity: it.quantity, half: it.half, description: `${type.name} - ${batch.name}${it.half ? " (meia)" : ""}` });
+    lines.push({ batch, quantity: it.quantity, description: `${type.name} - ${batch.name}` });
   }
 
   const coupon = input.couponCode ? await findValidCoupon(event.id, input.couponCode) : null;
   if (input.couponCode && !coupon) throw new CheckoutError("Cupom inválido ou esgotado");
 
   const pricing = calculatePricing(lines, coupon, event.feePayer);
+  // Comissão do anunciante: a do cupom, se definida; senão a padrão do anunciante
+  const commission = coupon?.advertiser
+    ? coupon.commissionType != null && coupon.commissionValue != null
+      ? { commissionType: coupon.commissionType, commissionValue: coupon.commissionValue }
+      : coupon.advertiser
+    : null;
+  const paidTickets = lines.reduce((n, l) => n + (l.batch.priceCents > 0 ? l.quantity : 0), 0);
+  const commissionCents = calculateCommission(commission, pricing.subtotalCents - pricing.discountCents, paidTickets);
   const isFree = pricing.totalCents === 0;
   const method: PaymentMethod = isFree ? "FREE" : input.paymentMethod;
   if (!isFree && method !== "PIX" && !input.card?.token) throw new CheckoutError("Dados do cartão ausentes");
@@ -114,13 +121,13 @@ export async function createOrder(input: CheckoutInput) {
           couponId: coupon?.id,
           advertiserId: coupon?.advertiserId,
           ...pricing,
+          commissionCents,
           expiresAt: new Date(Date.now() + env.reservationMinutes * 60_000),
           items: {
             create: lines.map((l) => ({
               batchId: l.batch.id,
               quantity: l.quantity,
-              half: l.half,
-              unitPriceCents: l.half ? l.batch.halfPriceCents! : l.batch.priceCents,
+              unitPriceCents: l.batch.priceCents,
             })),
           },
         },
@@ -142,7 +149,7 @@ export async function createOrder(input: CheckoutInput) {
         ...order,
         items: order.items.map((i) => ({
           ...i,
-          description: lines.find((l) => l.batch.id === i.batchId && l.half === i.half)!.description,
+          description: lines.find((l) => l.batch.id === i.batchId)!.description,
         })),
       },
       event,
@@ -193,16 +200,16 @@ export async function releaseOrder(orderId: string, status: "FAILED" | "EXPIRED"
  * Se o pedido já tinha expirado (Pix pago no último segundo), re-reserva o estoque.
  */
 export async function markOrderPaid(orderId: string) {
-  await db.$transaction(async (tx) => {
+  const issued = await db.$transaction(async (tx) => {
     const order = await tx.order.findUnique({ where: { id: orderId }, include: { items: true } });
-    if (!order || order.status === "PAID") return;
-    if (!["PENDING", "EXPIRED", "FAILED"].includes(order.status)) return;
+    if (!order || order.status === "PAID") return false;
+    if (!["PENDING", "EXPIRED", "FAILED"].includes(order.status)) return false;
 
     const changed = await tx.order.updateMany({
       where: { id: orderId, status: order.status },
       data: { status: "PAID", paidAt: new Date(), failureReason: null },
     });
-    if (changed.count === 0) return;
+    if (changed.count === 0) return false;
 
     if (order.status !== "PENDING") {
       // O estoque tinha sido devolvido: o dinheiro já entrou, então reserva de novo
@@ -219,12 +226,15 @@ export async function markOrderPaid(orderId: string) {
           orderId: order.id,
           eventId: order.eventId,
           batchId: item.batchId,
-          half: item.half,
           holderName: order.buyerName,
         })),
       ),
     });
+    return true;
   });
+  // Só quem de fato emitiu os ingressos manda o e-mail (evita e-mail duplicado)
+  if (issued) await safely(() => sendTicketsEmail(orderId), `ingressos ${orderId}`);
+  return issued;
 }
 
 /** Expira pedidos pendentes vencidos (chamado pelo cron e também sob demanda). */
@@ -251,11 +261,70 @@ export async function syncOrderWithGateway(orderId: string) {
   return (await db.order.findUnique({ where: { id: orderId }, select: { status: true } }))?.status;
 }
 
-/** Estorno confirmado pelo gateway: cancela os ingressos. */
-export async function markOrderRefunded(orderId: string) {
-  await db.$transaction(async (tx) => {
-    const changed = await tx.order.updateMany({ where: { id: orderId, status: "PAID" }, data: { status: "REFUNDED" } });
-    if (changed.count === 0) return;
+/**
+ * Marca o pedido como reembolsado: cancela os ingressos e devolve o estoque e o uso do cupom.
+ * Idempotente (só age se o pedido estiver PAID).
+ */
+export async function markOrderRefunded(orderId: string, by: "BUYER" | "PRODUCER" | "GATEWAY" = "GATEWAY") {
+  const done = await db.$transaction(async (tx) => {
+    const changed = await tx.order.updateMany({
+      where: { id: orderId, status: "PAID" },
+      data: { status: "REFUNDED", refundedAt: new Date(), refundedBy: by },
+    });
+    if (changed.count === 0) return false;
+    const order = await tx.order.findUniqueOrThrow({ where: { id: orderId }, include: { items: true } });
     await tx.ticket.updateMany({ where: { orderId }, data: { status: "CANCELLED" } });
+    for (const item of order.items) {
+      await tx.$executeRaw`UPDATE "Batch" SET "sold" = GREATEST("sold" - ${item.quantity}, 0) WHERE "id" = ${item.batchId}`;
+    }
+    if (order.couponId) await tx.$executeRaw`UPDATE "Coupon" SET "uses" = GREATEST("uses" - 1, 0) WHERE "id" = ${order.couponId}`;
+    return true;
   });
+  if (done) await safely(() => sendRefundEmail(orderId), `reembolso ${orderId}`);
+  return done;
+}
+
+export class RefundError extends Error {}
+
+/** Diz se o comprador pode pedir reembolso pelo site agora (e por quê, se não puder). */
+export function selfRefundStatus(
+  order: { status: string; event: { refundMode: string; refundDeadlineHours: number; startsAt: Date } },
+  usedTickets: number,
+  now = new Date(),
+): { allowed: boolean; reason?: string; deadline: Date } {
+  const deadline = new Date(order.event.startsAt.getTime() - order.event.refundDeadlineHours * 3_600_000);
+  if (order.status !== "PAID") return { allowed: false, reason: "Pedido não está pago", deadline };
+  if (order.event.refundMode !== "SELF_SERVICE") return { allowed: false, reason: "Reembolso feito pelo estabelecimento", deadline };
+  if (now > deadline) return { allowed: false, reason: "O prazo para reembolso terminou", deadline };
+  if (usedTickets > 0) return { allowed: false, reason: "Algum ingresso deste pedido já foi utilizado", deadline };
+  return { allowed: true, deadline };
+}
+
+/**
+ * Faz o reembolso total no gateway e cancela os ingressos.
+ * O produtor pode reembolsar a qualquer momento; o comprador só dentro da política do evento.
+ */
+export async function refundOrder(orderId: string, by: "BUYER" | "PRODUCER") {
+  const order = await db.order.findUnique({ where: { id: orderId }, include: { event: true } });
+  if (!order) throw new RefundError("Pedido não encontrado");
+  if (order.status === "REFUNDED") return;
+  if (order.status !== "PAID") throw new RefundError("Só pedidos pagos podem ser reembolsados");
+
+  if (by === "BUYER") {
+    const used = await db.ticket.count({ where: { orderId, status: "USED" } });
+    const check = selfRefundStatus(order, used);
+    if (!check.allowed) throw new RefundError(check.reason ?? "Reembolso indisponível");
+  }
+
+  if (order.totalCents > 0 && order.gatewayChargeId) {
+    const provider = paymentProvider();
+    if (!provider.refund) throw new RefundError("Gateway não suporta reembolso automático");
+    try {
+      await provider.refund(order.gatewayChargeId);
+    } catch (err) {
+      console.error("[refund] gateway recusou", orderId, err);
+      throw new RefundError("O gateway de pagamento recusou o reembolso. Tente novamente ou fale com o suporte.");
+    }
+  }
+  await markOrderRefunded(orderId, by);
 }

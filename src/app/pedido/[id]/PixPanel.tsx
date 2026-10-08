@@ -50,21 +50,21 @@ export function PixPanel(props: {
     <div className="card space-y-4 text-center">
       <StatusPoller orderId={props.orderId} />
       <p className="text-lg font-bold">Pague {props.totalLabel} com Pix</p>
-      <p className="text-sm text-neutral-400">
+      <p className="text-sm text-slate-500">
         Os ingressos ficam reservados por{" "}
-        <span className="font-mono font-semibold text-brand-400">
+        <span className="font-mono font-semibold text-[var(--accent)]">
           {String(mm).padStart(2, "0")}:{String(ss).padStart(2, "0")}
         </span>
       </p>
       {props.qrImage && (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={props.qrImage} alt="QR Code Pix" className="mx-auto h-56 w-56 rounded-lg bg-white p-2" />
+        <img src={props.qrImage} alt="QR Code Pix" className="mx-auto h-56 w-56 rounded-lg border border-slate-200 p-2" />
       )}
       {props.copyPaste && (
         <div className="space-y-2">
-          <p className="break-all rounded-lg bg-neutral-950 p-2 font-mono text-xs text-neutral-400">{props.copyPaste}</p>
+          <p className="break-all rounded-lg bg-slate-50 p-2 font-mono text-xs text-slate-500">{props.copyPaste}</p>
           <button
-            className="btn-primary w-full"
+            className="btn-accent w-full"
             onClick={async () => {
               await navigator.clipboard.writeText(props.copyPaste!);
               setCopied(true);
@@ -75,7 +75,7 @@ export function PixPanel(props: {
           </button>
         </div>
       )}
-      <p className="text-xs text-neutral-500">Assim que o pagamento cair, seus ingressos aparecem aqui automaticamente.</p>
+      <p className="text-sm text-slate-600">Abra o app do seu banco, escolha <b>Pix <p className="text-xs text-slate-500">Assim que o pagamento cair, seus ingressos aparecem aqui automaticamente.</p>gt; Pagar com QR Code</b> ou <b>Pix Copia e Cola</b>. Assim que o pagamento cair, seus ingressos aparecem aqui e chegam no seu e-mail.</p>
       {props.canSimulate && (
         <button
           className="btn-secondary w-full"

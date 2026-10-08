@@ -34,7 +34,7 @@ export async function POST(req: Request) {
 
   const info = {
     holderName: ticket.holderName,
-    ticketType: `${ticket.batch.ticketType.name} - ${ticket.batch.name}${ticket.half ? " (MEIA: conferir documento)" : ""}`,
+    ticketType: `${ticket.batch.ticketType.name} - ${ticket.batch.name}`,
     email: ticket.order.buyerEmail,
   };
 

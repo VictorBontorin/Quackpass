@@ -12,7 +12,7 @@ export const mockProvider: PaymentProvider = {
     const gatewayOrderId = `mock_${randomUUID()}`;
     if (order.paymentMethod === "PIX") {
       const payload = `00020126MOCKPIX${order.id}5204000053039865406${(order.totalCents / 100).toFixed(2)}5802BR`;
-      return { gatewayOrderId, status: "pending", pixQrCode: payload };
+      return { gatewayOrderId, gatewayChargeId: `ch_${randomUUID()}`, status: "pending", pixQrCode: payload };
     }
     if (card?.token === "mock_fail") {
       return { gatewayOrderId, status: "failed", failureReason: "Cartão recusado pelo emissor (simulado)" };
@@ -22,4 +22,5 @@ export const mockProvider: PaymentProvider = {
   async getStatus(): Promise<GatewayStatus> {
     return "pending";
   },
+  async refund() {},
 };

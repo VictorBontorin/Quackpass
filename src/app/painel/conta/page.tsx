@@ -10,23 +10,23 @@ export default async function AccountPage({ searchParams }: { searchParams: { er
     <div className="max-w-2xl space-y-6">
       <div>
         <h1 className="text-xl font-black">Recebimento</h1>
-        <p className="text-sm text-neutral-400">
+        <p className="text-sm text-slate-500">
           O valor de cada venda é dividido automaticamente (split): a sua parte vai direto para a sua conta pelo gateway de
           pagamento, e a taxa de serviço ({env.platformFeePercent}%, mínimo de R$ {(env.platformFeeMinCents / 100).toFixed(2).replace(".", ",")}{" "}
           por ingresso) fica com a plataforma. Sem mensalidade.
         </p>
       </div>
       {searchParams.erro === "sem-recebedor" && (
-        <div className="card border-red-900 text-sm text-red-200">Cadastre sua conta bancária antes de publicar um evento pago.</div>
+        <div className="card border-red-200 text-sm text-red-700">Cadastre sua conta bancária antes de publicar um evento pago.</div>
       )}
       {producer.recipientId && (
-        <div className="card border-emerald-900 text-sm text-emerald-200">✅ Recebimento ativo ({producer.recipientId})</div>
+        <div className="card border-emerald-200 text-sm text-emerald-700">✅ Recebimento ativo ({producer.recipientId})</div>
       )}
       <ActionForm action={saveBankAccount} className="card grid gap-3 sm:grid-cols-2">
         <div className="sm:col-span-2">
           <label className="label">Titular da conta</label>
           <input name="bankHolder" className="input" required defaultValue={producer.bankHolder ?? producer.name} />
-          <p className="mt-1 text-xs text-neutral-500">A conta precisa estar no mesmo CPF/CNPJ do cadastro ({producer.document}).</p>
+          <p className="mt-1 text-xs text-slate-500">A conta precisa estar no mesmo CPF/CNPJ do cadastro ({producer.document}).</p>
         </div>
         <div>
           <label className="label">Banco (código)</label>

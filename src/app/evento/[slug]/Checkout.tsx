@@ -1,6 +1,7 @@
 "use client";
 
 import type { FeePayer } from "@prisma/client";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useId, useMemo, useState } from "react";
 import { brl } from "@/lib/format";
@@ -11,7 +12,7 @@ export type CheckoutTicketType = {
   name: string;
   description: string;
   soldOut: boolean;
-  batch: { id: string; name: string; priceCents: number; halfPriceCents: number | null; maxPerOrder: number } | null;
+  batch: { id: string; name: string; priceCents: number; maxPerOrder: number } | null;
 };
 
 type Coupon = { code: string; discountType: "PERCENT" | "FIXED"; value: number; advertiserName: string | null };
@@ -26,6 +27,8 @@ export function Checkout(props: {
   fee: { percent: number; minCents: number };
   provider: "mock" | "pagarme";
   pagarmePublicKey: string;
+  /** Pré-visualização do produtor: mostra a caixa mas não deixa comprar */
+  preview?: boolean;
 }) {
   const router = useRouter();
   const search = useSearchParams();
@@ -36,7 +39,8 @@ export function Checkout(props: {
   const [couponMsg, setCouponMsg] = useState<string | null>(null);
   const [method, setMethod] = useState<Method>("PIX");
   const [installments, setInstallments] = useState(1);
-  const [buyer, setBuyer] = useState({ name: "", email: "", document: "", phone: "" });
+  const [buyer, setBuyer] = useState({ name: "", email: "", emailConfirm: "", document: "", phone: "" });
+  const [ageConfirmed, setAgeConfirmed] = useState(false);
   const [card, setCard] = useState({ number: "", holder: "", exp: "", cvv: "" });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -48,7 +52,7 @@ export function Checkout(props: {
     const data = await res.json();
     if (res.ok) {
       setCoupon(data);
-      setCouponMsg(`Cupom ${data.code} aplicado${data.advertiserName ? ` (${data.advertiserName})` : ""}`);
+      setCouponMsg(`Cupom ${data.code} aplicado`);
     } else {
       setCoupon(null);
       setCouponMsg(data.error ?? "Cupom inválido");
@@ -64,29 +68,14 @@ export function Checkout(props: {
 
   const lines = useMemo(
     () =>
-      props.ticketTypes.flatMap((t) => {
-        if (!t.batch) return [];
-        const b = t.batch;
-        return (["full", "half"] as const)
-          .map((kind) => ({ batch: b, half: kind === "half", quantity: qty[`${b.id}:${kind}`] ?? 0, type: t }))
-          .filter((l) => l.quantity > 0);
-      }),
+      props.ticketTypes
+        .filter((t) => t.batch && (qty[t.batch.id] ?? 0) > 0)
+        .map((t) => ({ batch: t.batch!, quantity: qty[t.batch!.id], type: t })),
     [qty, props.ticketTypes],
   );
-  const pricing = useMemo(
-    () => calculatePricing(lines, coupon, props.feePayer, props.fee),
-    [lines, coupon, props.feePayer, props.fee],
-  );
+  const pricing = useMemo(() => calculatePricing(lines, coupon, props.feePayer, props.fee), [lines, coupon, props.feePayer, props.fee]);
   const totalTickets = lines.reduce((s, l) => s + l.quantity, 0);
   const isFree = totalTickets > 0 && pricing.totalCents === 0;
-
-  function setLineQty(batchId: string, kind: "full" | "half", value: number, max: number) {
-    setQty((q) => {
-      const other = q[`${batchId}:${kind === "full" ? "half" : "full"}`] ?? 0;
-      const v = Math.max(0, Math.min(value, max - other));
-      return { ...q, [`${batchId}:${kind}`]: v };
-    });
-  }
 
   async function tokenizeCard(): Promise<string> {
     const [mm, yy] = card.exp.split("/").map((s) => s.trim());
@@ -112,6 +101,10 @@ export function Checkout(props: {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    if (buyer.email.trim().toLowerCase() !== buyer.emailConfirm.trim().toLowerCase()) {
+      return setError("Os e-mails não conferem. É para ele que enviamos os ingressos.");
+    }
+    if (!ageConfirmed) return setError("Confirme que você tem 18 anos ou mais.");
     setLoading(true);
     try {
       const token = !isFree && method !== "PIX" ? await tokenizeCard() : undefined;
@@ -120,9 +113,10 @@ export function Checkout(props: {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           eventId: props.eventId,
-          items: lines.map((l) => ({ batchId: l.batch.id, quantity: l.quantity, half: l.half })),
+          items: lines.map((l) => ({ batchId: l.batch.id, quantity: l.quantity })),
           couponCode: coupon?.code,
-          buyer,
+          buyer: { name: buyer.name, email: buyer.email, document: buyer.document, phone: buyer.phone },
+          ageConfirmed,
           paymentMethod: method,
           installments: method === "CREDIT_CARD" ? installments : 1,
           card: token ? { token } : undefined,
@@ -139,9 +133,9 @@ export function Checkout(props: {
   }
 
   const summary = (
-    <div className="space-y-1 border-t border-neutral-800 pt-3 text-sm">
-      <Row label="Subtotal" value={brl(pricing.subtotalCents)} />
-      {pricing.discountCents > 0 && <Row label={`Desconto (${coupon?.code})`} value={`- ${brl(pricing.discountCents)}`} accent />}
+    <div className="space-y-1.5 border-t border-slate-200 pt-4 text-sm">
+      <Row label={`Ingressos (${totalTickets})`} value={brl(pricing.subtotalCents)} />
+      {pricing.discountCents > 0 && <Row label={`Desconto ${coupon?.code}`} value={`- ${brl(pricing.discountCents)}`} accent />}
       {props.feePayer === "BUYER" && pricing.feeCents > 0 && <Row label="Taxa de serviço" value={brl(pricing.feeCents)} />}
       <Row label="Total" value={brl(pricing.totalCents)} bold />
     </div>
@@ -151,56 +145,44 @@ export function Checkout(props: {
     return (
       <div className="card space-y-4">
         <h2 className="text-lg font-bold">Ingressos</h2>
-        {props.ticketTypes.length === 0 && <p className="text-sm text-neutral-400">Nenhum ingresso disponível ainda.</p>}
+        {props.ticketTypes.length === 0 && <p className="text-sm text-slate-500">Os ingressos ainda não foram liberados.</p>}
         {props.ticketTypes.map((t) => (
-          <div key={t.id} className="rounded-xl border border-neutral-800 p-3">
-            <div className="flex items-baseline justify-between gap-2">
+          <div key={t.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 p-3">
+            <div className="min-w-0">
               <p className="font-semibold">{t.name}</p>
-              {t.batch && <span className="text-xs text-neutral-400">{t.batch.name}</span>}
+              {t.batch && <p className="text-xs text-slate-500">{t.batch.name}</p>}
+              {t.description && <p className="text-xs text-slate-500">{t.description}</p>}
+              {t.batch ? (
+                <p className="mt-1 font-bold">{t.batch.priceCents === 0 ? "Gratuito" : brl(t.batch.priceCents)}</p>
+              ) : (
+                <p className="mt-1 text-sm font-semibold text-slate-400">{t.soldOut ? "Esgotado" : "Em breve"}</p>
+              )}
             </div>
-            {t.description && <p className="text-xs text-neutral-500">{t.description}</p>}
-            {!t.batch ? (
-              <p className="mt-2 text-sm text-neutral-500">{t.soldOut ? "Esgotado" : "Em breve"}</p>
-            ) : (
-              <div className="mt-2 space-y-2">
-                <QtyRow
-                  label="Inteira"
-                  price={t.batch.priceCents}
-                  value={qty[`${t.batch.id}:full`] ?? 0}
-                  onChange={(v) => setLineQty(t.batch!.id, "full", v, t.batch!.maxPerOrder)}
-                />
-                {t.batch.halfPriceCents != null && (
-                  <QtyRow
-                    label="Meia-entrada"
-                    price={t.batch.halfPriceCents}
-                    value={qty[`${t.batch.id}:half`] ?? 0}
-                    onChange={(v) => setLineQty(t.batch!.id, "half", v, t.batch!.maxPerOrder)}
-                  />
-                )}
-              </div>
+            {t.batch && (
+              <Stepper
+                value={qty[t.batch.id] ?? 0}
+                onChange={(v) => setQty((q) => ({ ...q, [t.batch!.id]: Math.max(0, Math.min(v, t.batch!.maxPerOrder)) }))}
+              />
             )}
           </div>
         ))}
 
         <div>
-          <label className="label">Cupom de desconto</label>
+          <label className="label" htmlFor="coupon">
+            Cupom de desconto
+          </label>
           <div className="flex gap-2">
-            <input
-              className="input uppercase"
-              value={couponInput}
-              onChange={(e) => setCouponInput(e.target.value)}
-              placeholder="CÓDIGO"
-            />
+            <input id="coupon" className="input uppercase placeholder:normal-case" value={couponInput} onChange={(e) => setCouponInput(e.target.value)} placeholder="Opcional" />
             <button type="button" className="btn-secondary" onClick={() => applyCoupon(couponInput)}>
               Aplicar
             </button>
           </div>
-          {couponMsg && <p className={`mt-1 text-xs ${coupon ? "text-emerald-400" : "text-red-400"}`}>{couponMsg}</p>}
+          {couponMsg && <p className={`mt-1 text-xs font-medium ${coupon ? "text-emerald-700" : "text-red-700"}`}>{couponMsg}</p>}
         </div>
 
         {totalTickets > 0 && summary}
-        <button className="btn-primary w-full" disabled={totalTickets === 0} onClick={() => setStep(2)}>
-          Continuar
+        <button className="btn-accent w-full py-3 text-base" disabled={totalTickets === 0 || props.preview} onClick={() => setStep(2)}>
+          {props.preview ? "Pré-visualização" : "Continuar"}
         </button>
       </div>
     );
@@ -208,13 +190,17 @@ export function Checkout(props: {
 
   return (
     <form onSubmit={submit} className="card space-y-4">
-      <button type="button" onClick={() => setStep(1)} className="text-xs text-neutral-400 hover:text-white">
-        ← Voltar aos ingressos
+      <button type="button" onClick={() => setStep(1)} className="text-sm text-slate-500 hover:text-slate-900">
+        ← Alterar ingressos
       </button>
-      <h2 className="text-lg font-bold">Seus dados</h2>
+      <div>
+        <h2 className="text-lg font-bold">Seus dados</h2>
+        <p className="text-xs text-slate-500">Os ingressos serão enviados para o e-mail informado.</p>
+      </div>
       <div className="grid gap-3">
         <Field label="Nome completo" value={buyer.name} onChange={(v) => setBuyer({ ...buyer, name: v })} autoComplete="name" />
         <Field label="E-mail" type="email" value={buyer.email} onChange={(v) => setBuyer({ ...buyer, email: v })} autoComplete="email" />
+        <Field label="Confirme o e-mail" type="email" value={buyer.emailConfirm} onChange={(v) => setBuyer({ ...buyer, emailConfirm: v })} autoComplete="off" onPaste={(e) => e.preventDefault()} />
         <div className="grid grid-cols-2 gap-3">
           <Field label="CPF" value={buyer.document} onChange={(v) => setBuyer({ ...buyer, document: v })} inputMode="numeric" />
           <Field label="Celular" value={buyer.phone} onChange={(v) => setBuyer({ ...buyer, phone: v })} inputMode="tel" autoComplete="tel" />
@@ -224,7 +210,7 @@ export function Checkout(props: {
       {!isFree && (
         <>
           <h2 className="pt-2 text-lg font-bold">Pagamento</h2>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Forma de pagamento">
             {(
               [
                 ["PIX", "Pix"],
@@ -234,16 +220,18 @@ export function Checkout(props: {
             ).map(([m, label]) => (
               <button
                 type="button"
+                role="radio"
+                aria-checked={method === m}
                 key={m}
                 onClick={() => setMethod(m)}
-                className={`btn ${method === m ? "bg-brand-400 text-neutral-950" : "border border-neutral-700"}`}
+                className={`btn border ${method === m ? "border-[var(--accent)] bg-[var(--accent)] text-white" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
               >
                 {label}
               </button>
             ))}
           </div>
           {method === "PIX" ? (
-            <p className="text-xs text-neutral-400">Você recebe o QR Code na próxima tela. A aprovação é na hora.</p>
+            <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600">O QR Code do Pix aparece na próxima tela. A confirmação é automática, em segundos.</p>
           ) : (
             <div className="grid gap-3">
               <Field label="Número do cartão" value={card.number} onChange={(v) => setCard({ ...card, number: v })} inputMode="numeric" autoComplete="cc-number" />
@@ -254,8 +242,10 @@ export function Checkout(props: {
               </div>
               {method === "CREDIT_CARD" && (
                 <div>
-                  <label className="label">Parcelas</label>
-                  <select className="input" value={installments} onChange={(e) => setInstallments(Number(e.target.value))}>
+                  <label className="label" htmlFor="installments">
+                    Parcelas
+                  </label>
+                  <select id="installments" className="input" value={installments} onChange={(e) => setInstallments(Number(e.target.value))}>
                     {Array.from({ length: MAX_INSTALLMENTS }, (_, i) => i + 1).map((n) => (
                       <option key={n} value={n}>
                         {n}x de {brl(Math.ceil(pricing.totalCents / n))} sem juros
@@ -264,48 +254,60 @@ export function Checkout(props: {
                   </select>
                 </div>
               )}
-              {method === "DEBIT_CARD" && (
-                <p className="text-xs text-neutral-400">No débito, o seu banco vai pedir uma confirmação de segurança.</p>
-              )}
+              {method === "DEBIT_CARD" && <p className="text-xs text-slate-500">No débito, o seu banco pede uma confirmação de segurança.</p>}
             </div>
           )}
         </>
       )}
 
+      <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-200 p-3 text-sm">
+        <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[var(--accent)]" checked={ageConfirmed} onChange={(e) => setAgeConfirmed(e.target.checked)} />
+        <span>
+          Declaro que tenho <b>18 anos ou mais</b> e que vou apresentar documento com foto na entrada.
+        </span>
+      </label>
+
       {summary}
-      {error && <p className="rounded-lg bg-red-950 p-2 text-sm text-red-200">{error}</p>}
-      <button className="btn-primary w-full" disabled={loading}>
+      {error && <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
+      <button className="btn-accent w-full py-3 text-base" disabled={loading}>
         {loading ? "Processando..." : isFree ? "Garantir ingresso" : method === "PIX" ? "Gerar Pix" : `Pagar ${brl(pricing.totalCents)}`}
       </button>
+      <p className="text-center text-xs text-slate-500">
+        Ao continuar, você concorda com os{" "}
+        <Link href="/termos" target="_blank" className="underline">
+          Termos de uso
+        </Link>{" "}
+        e a{" "}
+        <Link href="/politica-de-reembolso" target="_blank" className="underline">
+          Política de reembolso
+        </Link>
+        .
+      </p>
     </form>
   );
 }
 
 function Row({ label, value, bold, accent }: { label: string; value: string; bold?: boolean; accent?: boolean }) {
   return (
-    <div className={`flex justify-between ${bold ? "pt-1 text-base font-bold" : ""} ${accent ? "text-emerald-400" : ""}`}>
+    <div className={`flex justify-between ${bold ? "pt-1 text-base font-bold" : "text-slate-600"} ${accent ? "text-emerald-700" : ""}`}>
       <span>{label}</span>
       <span>{value}</span>
     </div>
   );
 }
 
-function QtyRow({ label, price, value, onChange }: { label: string; price: number; value: number; onChange: (v: number) => void }) {
+function Stepper({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   return (
-    <div className="flex items-center justify-between">
-      <div>
-        <p className="text-sm">{label}</p>
-        <p className="text-sm font-bold">{price === 0 ? "Grátis" : brl(price)}</p>
-      </div>
-      <div className="flex items-center gap-3">
-        <button type="button" className="btn-secondary h-9 w-9 p-0" onClick={() => onChange(value - 1)} aria-label="Diminuir">
-          −
-        </button>
-        <span className="w-5 text-center font-semibold">{value}</span>
-        <button type="button" className="btn-secondary h-9 w-9 p-0" onClick={() => onChange(value + 1)} aria-label="Aumentar">
-          +
-        </button>
-      </div>
+    <div className="flex shrink-0 items-center gap-2">
+      <button type="button" className="btn-secondary h-9 w-9 p-0 text-lg" onClick={() => onChange(value - 1)} aria-label="Diminuir" disabled={value === 0}>
+        −
+      </button>
+      <span className="w-6 text-center font-semibold" aria-live="polite">
+        {value}
+      </span>
+      <button type="button" className="btn-secondary h-9 w-9 p-0 text-lg" onClick={() => onChange(value + 1)} aria-label="Aumentar">
+        +
+      </button>
     </div>
   );
 }

@@ -5,14 +5,19 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        // Azul institucional: transmite confiança e tem bom contraste com branco
         brand: {
-          50: "#fffbea",
-          100: "#fff3c4",
-          400: "#fbbf24",
-          500: "#f59e0b",
-          600: "#d97706",
-          700: "#b45309",
+          50: "#eff6ff",
+          100: "#dbeafe",
+          200: "#bfdbfe",
+          500: "#2563eb",
+          600: "#1d4ed8",
+          700: "#1e40af",
+          800: "#1e3a8a",
         },
+      },
+      fontFamily: {
+        sans: ["var(--font-sans)", "system-ui", "sans-serif"],
       },
     },
   },

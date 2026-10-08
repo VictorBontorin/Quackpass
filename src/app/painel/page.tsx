@@ -40,7 +40,7 @@ export default async function PanelHome() {
       </div>
 
       {events.length === 0 ? (
-        <div className="card text-neutral-400">Você ainda não criou nenhum evento.</div>
+        <div className="card text-slate-500">Você ainda não criou nenhum evento.</div>
       ) : (
         <div className="card overflow-x-auto p-0">
           <table className="table">
@@ -55,13 +55,13 @@ export default async function PanelHome() {
             </thead>
             <tbody>
               {events.map((e) => (
-                <tr key={e.id} className="hover:bg-neutral-900">
+                <tr key={e.id} className="hover:bg-slate-50">
                   <td>
-                    <Link href={`/painel/eventos/${e.id}`} className="font-semibold hover:text-brand-400">
+                    <Link href={`/painel/eventos/${e.id}`} className="font-semibold hover:text-brand-600">
                       {e.title}
                     </Link>
                   </td>
-                  <td className="whitespace-nowrap text-neutral-400">{dateTime(e.startsAt)}</td>
+                  <td className="whitespace-nowrap text-slate-500">{dateTime(e.startsAt)}</td>
                   <td>
                     <StatusBadge status={e.status} />
                   </td>

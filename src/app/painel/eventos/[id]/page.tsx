@@ -11,12 +11,12 @@ export default async function EventSummary({ params }: { params: { id: string } 
   const { event } = await requireOwnedEvent(params.id);
 
   const [paid, pending, byMethod, byAdvertiser, byCoupon, ticketsByBatch, checkins, types, advertisers, coupons] = await Promise.all([
-    db.order.aggregate({ where: { eventId: event.id, status: "PAID" }, _sum: { totalCents: true, producerCents: true, discountCents: true }, _count: true }),
+    db.order.aggregate({ where: { eventId: event.id, status: "PAID" }, _sum: { totalCents: true, producerCents: true, discountCents: true, commissionCents: true }, _count: true }),
     db.order.count({ where: { eventId: event.id, status: "PENDING" } }),
     db.order.groupBy({ by: ["paymentMethod"], where: { eventId: event.id, status: "PAID" }, _sum: { totalCents: true }, _count: true }),
-    db.order.groupBy({ by: ["advertiserId"], where: { eventId: event.id, status: "PAID" }, _sum: { producerCents: true }, _count: true }),
+    db.order.groupBy({ by: ["advertiserId"], where: { eventId: event.id, status: "PAID" }, _sum: { producerCents: true, commissionCents: true }, _count: true }),
     db.order.groupBy({ by: ["couponId"], where: { eventId: event.id, status: "PAID", couponId: { not: null } }, _sum: { discountCents: true }, _count: true }),
-    db.ticket.groupBy({ by: ["batchId", "half"], where: { eventId: event.id, status: { not: "CANCELLED" } }, _count: true }),
+    db.ticket.groupBy({ by: ["batchId"], where: { eventId: event.id, status: { not: "CANCELLED" } }, _count: true }),
     db.ticket.count({ where: { eventId: event.id, status: "USED" } }),
     db.ticketType.findMany({ where: { eventId: event.id }, orderBy: { sortOrder: "asc" }, include: { batches: { orderBy: { sortOrder: "asc" } } } }),
     db.advertiser.findMany({ where: { producerId: event.producerId } }),
@@ -24,7 +24,8 @@ export default async function EventSummary({ params }: { params: { id: string } 
   ]);
 
   const ticketsTotal = ticketsByBatch.reduce((s, t) => s + t._count, 0);
-  const issued = (batchId: string, half: boolean) => ticketsByBatch.find((t) => t.batchId === batchId && t.half === half)?._count ?? 0;
+  const issued = (batchId: string) => ticketsByBatch.find((t) => t.batchId === batchId)?._count ?? 0;
+  const commissionTotal = paid._sum.commissionCents ?? 0;
 
   const advRows = await db.$queryRaw<{ advertiserId: string; n: number }[]>`
     SELECT o."advertiserId", COUNT(t."id")::int AS n
@@ -55,13 +56,17 @@ export default async function EventSummary({ params }: { params: { id: string } 
             <button className="btn-danger">Cancelar evento</button>
           </form>
         )}
-        <code className="ml-auto rounded-lg bg-neutral-900 px-3 py-2 text-xs text-neutral-400">
+        <code className="ml-auto rounded-lg bg-white px-3 py-2 text-xs text-slate-500">
           {env.appUrl}/evento/{event.slug}
         </code>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="Você recebe" value={brl(paid._sum.producerCents ?? 0)} hint={`${paid._count} pedidos pagos`} />
+        <Stat
+          label="Você recebe"
+          value={brl(paid._sum.producerCents ?? 0)}
+          hint={commissionTotal > 0 ? `Comissões a pagar: ${brl(commissionTotal)}` : `${paid._count} pedidos pagos`}
+        />
         <Stat label="Vendido (bruto)" value={brl(paid._sum.totalCents ?? 0)} hint={`Descontos: ${brl(paid._sum.discountCents ?? 0)}`} />
         <Stat label="Ingressos" value={String(ticketsTotal)} hint={`${pending} pedidos aguardando pagamento`} />
         <Stat label="Check-ins" value={`${checkins} / ${ticketsTotal}`} hint={ticketsTotal ? `${Math.round((checkins / ticketsTotal) * 100)}% entraram` : undefined} />
@@ -75,8 +80,7 @@ export default async function EventSummary({ params }: { params: { id: string } 
               <th>Ingresso</th>
               <th>Lote</th>
               <th className="text-right">Preço</th>
-              <th className="text-right">Inteira</th>
-              <th className="text-right">Meia</th>
+              <th className="text-right">Emitidos</th>
               <th className="text-right">Ocupação</th>
             </tr>
           </thead>
@@ -87,8 +91,7 @@ export default async function EventSummary({ params }: { params: { id: string } 
                   <td>{t.name}</td>
                   <td>{b.name}</td>
                   <td className="text-right">{brl(b.priceCents)}</td>
-                  <td className="text-right">{issued(b.id, false)}</td>
-                  <td className="text-right">{issued(b.id, true)}</td>
+                  <td className="text-right">{issued(b.id)}</td>
                   <td className="text-right">
                     {b.sold}/{b.quantity}
                   </td>
@@ -109,6 +112,7 @@ export default async function EventSummary({ params }: { params: { id: string } 
                 <th className="text-right">Pedidos</th>
                 <th className="text-right">Ingressos</th>
                 <th className="text-right">Você recebe</th>
+                <th className="text-right">Comissão</th>
               </tr>
             </thead>
             <tbody>
@@ -116,16 +120,17 @@ export default async function EventSummary({ params }: { params: { id: string } 
                 .sort((a, b) => (b._sum.producerCents ?? 0) - (a._sum.producerCents ?? 0))
                 .map((r) => (
                   <tr key={r.advertiserId ?? "none"}>
-                    <td>{r.advertiserId ? advertisers.find((a) => a.id === r.advertiserId)?.name : <span className="text-neutral-500">Venda direta</span>}</td>
+                    <td>{r.advertiserId ? advertisers.find((a) => a.id === r.advertiserId)?.name : <span className="text-slate-500">Venda direta</span>}</td>
                     <td className="text-right">{r._count}</td>
                     <td className="text-right">{r.advertiserId ? ticketsPerAdvertiser.get(r.advertiserId) ?? 0 : "-"}</td>
                     <td className="text-right">{brl(r._sum.producerCents ?? 0)}</td>
+                    <td className="text-right">{r.advertiserId ? brl(r._sum.commissionCents ?? 0) : "-"}</td>
                   </tr>
                 ))}
             </tbody>
           </table>
           {byCoupon.length > 0 && (
-            <p className="p-4 text-xs text-neutral-500">
+            <p className="p-4 text-xs text-slate-500">
               Cupons usados:{" "}
               {byCoupon.map((c) => `${coupons.find((x) => x.id === c.couponId)?.code} (${c._count})`).join(", ")}
             </p>

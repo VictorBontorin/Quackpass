@@ -20,6 +20,14 @@ enum FeePayer {
   PRODUCER
 }
 
+/// Quem faz o reembolso quando o cliente desiste
+enum RefundMode {
+  /// O cliente pede pelo site e o reembolso é automático (dentro do prazo)
+  SELF_SERVICE
+  /// O cliente fala com o estabelecimento e o produtor reembolsa pelo painel
+  PRODUCER
+}
+
 enum DiscountType {
   PERCENT
   FIXED
@@ -67,6 +75,7 @@ model Producer {
 
   events      Event[]
   advertisers Advertiser[]
+  uploads     Upload[]
 }
 
 model Event {
@@ -82,9 +91,22 @@ model Event {
   startsAt    DateTime
   endsAt      DateTime?
   bannerUrl   String?
-  minAge      Int?
+  /// Blocos de conteúdo da página (texto, imagem, galeria, atrações, vídeo, FAQ). Ver src/lib/content.ts
+  content     Json        @default("[]")
+  /// Cor de destaque da página do evento
+  accentColor String      @default("#1d4ed8")
+  showMap     Boolean     @default(true)
+  minAge      Int         @default(18)
   status      EventStatus @default(DRAFT)
   feePayer    FeePayer    @default(BUYER)
+
+  contactPhone     String?
+  contactEmail     String?
+  contactInstagram String?
+
+  refundMode          RefundMode @default(PRODUCER)
+  /// Reembolso permitido até X horas antes do início
+  refundDeadlineHours Int        @default(48)
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
@@ -119,8 +141,6 @@ model Batch {
   ticketTypeId String
   name         String
   priceCents   Int
-  /// Se preenchido, oferece meia-entrada neste valor
-  halfPriceCents Int?
   quantity     Int
   /// Vendidos + reservados (pedidos pendentes). Atualizado atomicamente.
   sold         Int       @default(0)
@@ -145,6 +165,9 @@ model Advertiser {
   email      String?
   phone      String?
   instagram  String?
+  /// PERCENT: em centésimos de % (750 = 7,5%) sobre o valor dos ingressos. FIXED: centavos por ingresso.
+  commissionType  DiscountType @default(PERCENT)
+  commissionValue Int          @default(0)
   createdAt  DateTime @default(now())
 
   producer Producer @relation(fields: [producerId], references: [id])
@@ -168,6 +191,9 @@ model Coupon {
   uses         Int          @default(0)
   validUntil   DateTime?
   active       Boolean      @default(true)
+  /// Se preenchido, substitui a comissão padrão do anunciante neste cupom
+  commissionType  DiscountType?
+  commissionValue Int?
   createdAt    DateTime     @default(now())
 
   event      Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
@@ -200,6 +226,8 @@ model Order {
   producerCents  Int
   /// Quanto fica com a plataforma no split
   platformCents  Int
+  /// Comissão devida ao anunciante (paga pelo produtor, fora do split)
+  commissionCents Int          @default(0)
 
   gatewayOrderId String?       @unique
   gatewayChargeId String?
@@ -211,6 +239,10 @@ model Order {
 
   expiresAt      DateTime
   paidAt         DateTime?
+  refundedAt     DateTime?
+  /// BUYER (pelo site) ou PRODUCER (pelo painel)
+  refundedBy     String?
+  ticketsEmailedAt DateTime?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
@@ -231,7 +263,6 @@ model OrderItem {
   orderId        String
   batchId        String
   quantity       Int
-  half           Boolean @default(false)
   unitPriceCents Int
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
@@ -248,7 +279,6 @@ model Ticket {
   orderId     String
   eventId     String
   batchId     String
-  half        Boolean      @default(false)
   holderName  String
   status      TicketStatus @default(VALID)
   checkedInAt DateTime?
@@ -267,4 +297,19 @@ model WebhookEvent {
   id          String   @id
   type        String
   receivedAt  DateTime @default(now())
+}
+
+/// Imagens enviadas pelos produtores. Servidas com cache imutável (CDN).
+/// Para volume muito alto, migrar para S3/R2 (ver README).
+model Upload {
+  id         String   @id @default(cuid())
+  producerId String
+  mimeType   String
+  size       Int
+  data       Bytes
+  createdAt  DateTime @default(now())
+
+  producer Producer @relation(fields: [producerId], references: [id])
+
+  @@index([producerId])
 }

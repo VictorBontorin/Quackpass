@@ -15,14 +15,14 @@ const tabs = [
 export function Tabs({ base }: { base: string }) {
   const path = usePathname();
   return (
-    <div className="flex gap-1 overflow-x-auto border-b border-neutral-800">
+    <div className="flex gap-1 overflow-x-auto border-b border-slate-200">
       {tabs.map(([href, label]) => {
         const active = path === base + href;
         return (
           <Link
             key={href}
             href={base + href}
-            className={`whitespace-nowrap border-b-2 px-3 py-2 text-sm ${active ? "border-brand-400 text-white" : "border-transparent text-neutral-400 hover:text-white"}`}
+            className={`whitespace-nowrap border-b-2 px-3 py-2 text-sm ${active ? "border-brand-600 font-semibold text-brand-700" : "border-transparent text-slate-500 hover:text-slate-900"}`}
           >
             {label}
           </Link>

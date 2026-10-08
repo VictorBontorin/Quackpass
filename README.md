@@ -7,12 +7,16 @@ Plataforma de venda de ingressos para baladas, bares e eventos. Produtores cadas
 | Área | Funcionalidades |
 |---|---|
 | **Produtor** | Cadastro e login, conta de recebimento (split automático) |
-| **Eventos** | Criar/editar, publicar/pausar/cancelar, banner, idade mínima, quem paga a taxa |
-| **Ingressos** | Tipos (Pista, VIP, Camarote...) com **lotes**: preço, meia-entrada, quantidade, máximo por pedido, janela de vendas. O próximo lote abre sozinho quando o anterior esgota ou vence |
-| **Anunciantes** | Produtor cadastra promoters/anunciantes e cria **cupons** vinculados a eles (% ou R$, limite de usos, validade). Link de divulgação `?cupom=CODIGO` aplica o desconto automaticamente |
+| **Eventos** | Criar/editar, publicar/pausar/cancelar, pré-visualização do rascunho, quem paga a taxa. Todos os eventos são **+18** (o comprador confirma a idade no checkout) |
+| **Página do evento personalizável** | Capa com upload, cor do evento, texto com formatação e **blocos**: texto, imagem, galeria de fotos, atrações/line-up, vídeo do YouTube, perguntas frequentes. Mapa do local e contatos do organizador |
+| **Ingressos** | Tipos (Pista, VIP, Camarote...) com **lotes**: preço, quantidade, máximo por pedido, janela de vendas. O próximo lote abre sozinho quando o anterior esgota ou vence |
+| **Anunciantes** | Produtor cadastra promoters/anunciantes com **comissão** (% da venda ou R$ por ingresso) e cria **cupons** vinculados a eles (% ou R$ de desconto, limite de usos, validade, comissão própria opcional). Link de divulgação `?cupom=CODIGO` aplica o desconto automaticamente. Relatório de comissão a pagar por anunciante |
+| **Reembolso** | Por evento, o produtor define o **prazo** (até X horas antes) e **quem reembolsa**: o próprio site (cliente pede na página do pedido e o estorno é automático) ou só o produtor (cliente fala com a casa e o produtor reembolsa pelo painel). O produtor pode reembolsar qualquer pedido pelo painel a qualquer momento |
+| **E-mail** | Ingressos com QR Code enviados por e-mail assim que o pagamento confirma; reenvio pelo cliente ou pelo produtor; e-mail de reembolso confirmado |
 | **Checkout** | **Pix** (QR + copia-e-cola, confirmação automática), **cartão de crédito** (até 6x) e **débito** (com 3DS), com split entre produtor e plataforma |
 | **Ingresso** | Gerado assim que o pagamento é confirmado, com QR Code único por ingresso e página individual para enviar a um amigo |
-| **Painel de vendas** | Faturamento, ingressos por lote, inteira/meia, vendas por anunciante e por forma de pagamento, lista de pedidos com busca |
+| **Painel de vendas** | Faturamento, ingressos por lote, vendas e comissões por anunciante, por forma de pagamento, lista de pedidos com busca, reembolso e reenvio de e-mail |
+| **Páginas institucionais** | Termos de uso, privacidade, política de reembolso, central de ajuda e página "para produtores" (modelos: revise com um advogado) |
 | **Check-in** | Página para a portaria: lê o QR pela câmera do celular (ou código digitado), mostra ✅ / ⚠️ já usado / ❌ inválido |
 
 ## Modelo de cobrança
@@ -35,12 +39,14 @@ Exemplo: ingresso de R$ 50 com taxa paga pelo comprador → comprador paga R$ 55
 - **Dados do cartão nunca passam pelo servidor:** o navegador envia direto para a Pagar.me e recebe um token.
 - Índices em todas as consultas quentes, rate limit no checkout, cupom, login e cadastro.
 
+- **Comissão "congelada" no pedido:** mudar a comissão de um anunciante vale só para vendas novas; as antigas mantêm o valor combinado.
+
 ### Para escalar mais (quando precisar)
 
 1. **Banco:** Postgres gerenciado (Neon, Supabase, RDS) com pooler (PgBouncer/Supavisor). Use a URL com pooler em `DATABASE_URL` e a direta em `DIRECT_URL`.
 2. **Rate limit distribuído:** o atual é em memória, por instância. Com várias instâncias, troque por Redis (`@upstash/ratelimit`) em `src/lib/ratelimit.ts`.
-3. **Imagens:** banners por URL hoje; depois, upload para S3/R2 + CDN.
-4. **Fila:** para envio de e-mails/WhatsApp com ingresso, use uma fila (ex.: Inngest, BullMQ) em vez de enviar dentro da requisição.
+3. **Imagens:** hoje ficam no Postgres (tabela `Upload`) e são servidas com cache imutável de 1 ano, então uma CDN (Cloudflare, Vercel) absorve quase todo o tráfego. Com muito volume, migre para S3/R2 trocando `src/app/api/uploads`.
+4. **Fila de e-mail:** hoje o e-mail sai na mesma requisição que confirma o pagamento (uma falha no envio nunca derruba o pagamento). Com muito volume, mova o envio para uma fila (ex.: Inngest, BullMQ).
 
 ## Rodando localmente
 
@@ -55,6 +61,8 @@ npm run dev                   # http://localhost:3000
 ```
 
 Com Docker: `docker compose up --build`.
+
+Sem `SMTP_URL`, os e-mails não são enviados: aparecem no log (e, com `EMAIL_PREVIEW_DIR`, são salvos como HTML para você abrir no navegador).
 
 Com `PAYMENT_PROVIDER="mock"` (padrão) nada é cobrado de verdade:
 - **Pix:** a tela do pedido mostra o botão "[DEV] Simular pagamento".
@@ -79,8 +87,10 @@ Demo: `http://localhost:3000/evento/4-anos-folks-curitiba?cupom=WESLEY`
    ```
 4. No painel da Pagar.me, crie um webhook para `https://seudominio.com.br/api/webhooks/pagarme` com **Basic Auth** (o usuário/senha acima) e os eventos `order.paid`, `order.payment_failed`, `order.canceled`, `charge.paid`, `charge.refunded`, `charge.payment_failed`.
 5. Libere o domínio do site para tokenização de cartão no painel da Pagar.me.
-6. Agende `GET /api/cron/expire-orders` a cada minuto com o header `Authorization: Bearer <CRON_SECRET>`. Na Vercel isso já está no `vercel.json` (cron por minuto exige plano Pro; no plano grátis use um cron externo).
-7. Cada produtor ativa o recebimento em **Painel → Recebimento**: isso cria o recebedor dele na Pagar.me com a conta bancária informada.
+6. Configure o e-mail: crie uma conta num serviço de SMTP (o [Resend](https://resend.com) é simples), **verifique o seu domínio** (registros SPF/DKIM, para não cair no spam) e preencha `SMTP_URL` e `EMAIL_FROM`.
+7. Preencha os dados da empresa (`COMPANY_LEGAL_NAME`, `COMPANY_CNPJ`, `SUPPORT_EMAIL`): eles aparecem no rodapé, nos termos e nos e-mails e passam confiança.
+8. Agende `GET /api/cron/expire-orders` a cada minuto com o header `Authorization: Bearer <CRON_SECRET>`. Na Vercel isso já está no `vercel.json` (cron por minuto exige plano Pro; no plano grátis use um cron externo).
+9. Cada produtor ativa o recebimento em **Painel → Recebimento**: isso cria o recebedor dele na Pagar.me com a conta bancária informada.
 
 > Teste tudo primeiro com as chaves de **sandbox** (`sk_test_...`). Em especial o **débito**, que depende da autenticação 3DS do banco e precisa ser validado no sandbox antes de ir ao ar.
 
@@ -105,10 +115,10 @@ src/app/api/                      checkout, cupom, status do pedido, webhook, ch
 
 ## Próximos passos sugeridos
 
-- Envio do ingresso por e-mail/WhatsApp
+- Envio do ingresso por WhatsApp
 - Usuários de equipe (portaria) com acesso só ao check-in
-- Reembolso/cancelamento pelo painel
+- Reembolso automático de todos os compradores ao cancelar um evento
 - Transferência de titularidade do ingresso
 - Lista VIP / nome na lista
-- Upload de banner
+- Acesso do anunciante para ver as próprias vendas
 - Painel administrativo da plataforma

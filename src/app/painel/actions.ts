@@ -8,7 +8,10 @@ import type { ActionState } from "@/components/ActionForm";
 import { requireOwnedEvent, requireProducer } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { env } from "@/lib/env";
+import { contentSchema, ACCENT_COLORS } from "@/lib/content";
 import { onlyDigits, parseLocalDateTime, parseMoney, slugify } from "@/lib/format";
+import { sendTicketsEmail } from "@/lib/email";
+import { refundOrder, RefundError } from "@/lib/orders";
 import { createPagarmeRecipient } from "@/lib/payments/pagarme";
 
 const suffix = customAlphabet("abcdefghijkmnpqrstuvwxyz23456789", 5);
@@ -26,9 +29,29 @@ const eventSchema = z.object({
     return d!;
   }),
   endsAt: z.string().optional().transform((s) => (s ? parseLocalDateTime(s) : null)),
-  bannerUrl: z.string().trim().url("URL do banner inválida").or(z.literal("")).optional(),
-  minAge: z.coerce.number().int().min(0).max(21).optional().or(z.literal("")),
+  bannerUrl: z
+    .string()
+    .trim()
+    .refine((u) => u === "" || u.startsWith("/api/uploads/") || /^https:\/\//.test(u), "Imagem de capa inválida")
+    .optional(),
   feePayer: z.enum(["BUYER", "PRODUCER"]),
+  accentColor: z.string().refine((c) => ACCENT_COLORS.some((a) => a.value === c), "Cor inválida"),
+  showMap: z.string().optional(),
+  content: z.string().transform((s, ctx) => {
+    try {
+      const parsed = contentSchema.safeParse(JSON.parse(s || "[]"));
+      if (parsed.success) return parsed.data;
+      ctx.addIssue({ code: "custom", message: `Conteúdo da página: ${parsed.error.issues[0].message}` });
+    } catch {
+      ctx.addIssue({ code: "custom", message: "Conteúdo da página inválido" });
+    }
+    return z.NEVER;
+  }),
+  contactPhone: z.string().trim().max(30).optional(),
+  contactEmail: z.string().trim().email("E-mail de contato inválido").or(z.literal("")).optional(),
+  contactInstagram: z.string().trim().max(60).optional(),
+  refundMode: z.enum(["SELF_SERVICE", "PRODUCER"]),
+  refundDeadlineHours: z.coerce.number().int().min(0, "Prazo inválido").max(24 * 90),
 });
 
 function parseEvent(form: FormData) {
@@ -46,8 +69,15 @@ function parseEvent(form: FormData) {
       startsAt: d.startsAt,
       endsAt: d.endsAt,
       bannerUrl: d.bannerUrl || null,
-      minAge: typeof d.minAge === "number" && d.minAge > 0 ? d.minAge : null,
       feePayer: d.feePayer,
+      accentColor: d.accentColor,
+      showMap: d.showMap === "on",
+      content: d.content,
+      contactPhone: d.contactPhone || null,
+      contactEmail: d.contactEmail || null,
+      contactInstagram: d.contactInstagram?.replace(/^@/, "") || null,
+      refundMode: d.refundMode,
+      refundDeadlineHours: d.refundDeadlineHours,
     },
   } as const;
 }
@@ -68,7 +98,8 @@ export async function updateEvent(eventId: string, _prev: ActionState, form: For
   if ("error" in parsed) return { error: parsed.error };
   await db.event.update({ where: { id: event.id }, data: parsed.data });
   revalidatePath(`/evento/${event.slug}`);
-  return { ok: "Evento atualizado" };
+  revalidatePath(`/painel/eventos/${event.id}`, "layout");
+  return { ok: "Evento salvo. As mudanças já aparecem na página pública." };
 }
 
 export async function setEventStatus(eventId: string, status: "DRAFT" | "PUBLISHED" | "CANCELLED") {
@@ -108,7 +139,6 @@ const batchSchema = z.object({
     if (!Number.isFinite(v) || v < 0) ctx.addIssue({ code: "custom", message: "Preço inválido" });
     return v;
   }),
-  halfPrice: z.string().optional().transform((s) => (s ? parseMoney(s) : null)),
   quantity: z.coerce.number().int().min(1, "Quantidade mínima 1").max(1_000_000),
   maxPerOrder: z.coerce.number().int().min(1).max(50).default(10),
   salesStart: z.string().optional().transform((s) => (s ? parseLocalDateTime(s) : null)),
@@ -123,14 +153,12 @@ export async function createBatch(eventId: string, ticketTypeId: string, _prev: 
   if (!parsed.success) return { error: parsed.error.issues[0].message };
   const d = parsed.data;
   if (d.price > 0 && d.price < 100) return { error: "Preço mínimo de R$ 1,00 (ou 0 para gratuito)" };
-  if (d.halfPrice != null && (!Number.isFinite(d.halfPrice) || d.halfPrice > d.price)) return { error: "Meia-entrada inválida" };
   const count = await db.batch.count({ where: { ticketTypeId } });
   await db.batch.create({
     data: {
       ticketTypeId,
       name: d.name,
       priceCents: d.price,
-      halfPriceCents: d.halfPrice,
       quantity: d.quantity,
       maxPerOrder: d.maxPerOrder,
       salesStart: d.salesStart,
@@ -169,16 +197,47 @@ export async function toggleTicketType(eventId: string, ticketTypeId: string) {
 
 // ---------- Anunciantes e cupons ----------
 
+/** Lê comissão do formulário. PERCENT vira centésimos de % (7,5 → 750); FIXED vira centavos por ingresso. */
+function parseCommission(form: FormData, prefix = "commission"): { commissionType: "PERCENT" | "FIXED"; commissionValue: number } | { error: string } | null {
+  const raw = String(form.get(`${prefix}Value`) ?? "").trim();
+  if (raw === "") return null;
+  const type = form.get(`${prefix}Type`) === "FIXED" ? "FIXED" : "PERCENT";
+  const value = type === "PERCENT" ? Math.round(Number(raw.replace(",", ".")) * 100) : parseMoney(raw);
+  if (!Number.isFinite(value) || value < 0) return { error: "Comissão inválida" };
+  if (type === "PERCENT" && value > 10_000) return { error: "Comissão acima de 100%" };
+  return { commissionType: type, commissionValue: value };
+}
+
 export async function createAdvertiser(_prev: ActionState, form: FormData): Promise<ActionState> {
   const producer = await requireProducer();
   const name = String(form.get("name") ?? "").trim();
   if (name.length < 2) return { error: "Informe o nome do anunciante" };
+  const commission = parseCommission(form);
+  if (commission && "error" in commission) return { error: commission.error };
   const clean = (k: string) => String(form.get(k) ?? "").trim() || null;
   await db.advertiser.create({
-    data: { producerId: producer.id, name, email: clean("email"), phone: clean("phone"), instagram: clean("instagram") },
+    data: {
+      producerId: producer.id,
+      name,
+      email: clean("email"),
+      phone: clean("phone"),
+      instagram: clean("instagram"),
+      ...(commission ?? {}),
+    },
   });
   revalidatePath("/painel/anunciantes");
   return { ok: `${name} cadastrado` };
+}
+
+export async function updateAdvertiserCommission(advertiserId: string, _prev: ActionState, form: FormData): Promise<ActionState> {
+  const producer = await requireProducer();
+  const adv = await db.advertiser.findFirst({ where: { id: advertiserId, producerId: producer.id } });
+  if (!adv) return { error: "Anunciante não encontrado" };
+  const commission = parseCommission(form) ?? { commissionType: "PERCENT" as const, commissionValue: 0 };
+  if ("error" in commission) return { error: commission.error };
+  await db.advertiser.update({ where: { id: adv.id }, data: commission });
+  revalidatePath("/painel/anunciantes");
+  return { ok: "Comissão atualizada. Vale para as próximas vendas." };
 }
 
 const couponSchema = z.object({
@@ -192,6 +251,8 @@ const couponSchema = z.object({
   value: z.string().min(1, "Informe o desconto"),
   maxUses: z.coerce.number().int().min(1).optional().or(z.literal("")),
   validUntil: z.string().optional(),
+  commissionType: z.string().optional(),
+  commissionValue: z.string().optional(),
 });
 
 export async function createCoupon(eventId: string, _prev: ActionState, form: FormData): Promise<ActionState> {
@@ -201,6 +262,9 @@ export async function createCoupon(eventId: string, _prev: ActionState, form: Fo
   const d = parsed.data;
   const value = d.discountType === "PERCENT" ? Math.round(Number(d.value.replace(",", "."))) : parseMoney(d.value);
   if (!Number.isFinite(value) || value < 0 || (d.discountType === "PERCENT" && value > 100)) return { error: "Desconto inválido" };
+
+  const commission = parseCommission(form);
+  if (commission && "error" in commission) return { error: commission.error };
 
   let advertiserId: string | null = null;
   if (d.advertiserId) {
@@ -218,6 +282,7 @@ export async function createCoupon(eventId: string, _prev: ActionState, form: Fo
         value,
         maxUses: typeof d.maxUses === "number" ? d.maxUses : null,
         validUntil: d.validUntil ? parseLocalDateTime(d.validUntil) : null,
+        ...(commission && advertiserId ? commission : {}),
       },
     });
   } catch {
@@ -277,4 +342,31 @@ export async function saveBankAccount(_prev: ActionState, form: FormData): Promi
   await db.producer.update({ where: { id: producer.id }, data: { ...d, recipientId } });
   revalidatePath("/painel/conta");
   return { ok: "Conta de recebimento ativa" };
+}
+
+// ---------- Pedidos ----------
+
+export async function refundOrderAction(eventId: string, orderId: string, _prev: ActionState): Promise<ActionState> {
+  await requireOwnedEvent(eventId);
+  const order = await db.order.findFirst({ where: { id: orderId, eventId } });
+  if (!order) return { error: "Pedido não encontrado" };
+  try {
+    await refundOrder(order.id, "PRODUCER");
+  } catch (err) {
+    return { error: err instanceof RefundError ? err.message : "Erro ao reembolsar" };
+  }
+  revalidatePath(`/painel/eventos/${eventId}`, "layout");
+  return { ok: "Reembolso feito. O comprador foi avisado por e-mail." };
+}
+
+export async function resendTicketsAction(eventId: string, orderId: string, _prev: ActionState): Promise<ActionState> {
+  await requireOwnedEvent(eventId);
+  const order = await db.order.findFirst({ where: { id: orderId, eventId, status: "PAID" } });
+  if (!order) return { error: "Pedido não encontrado ou não pago" };
+  try {
+    await sendTicketsEmail(order.id);
+  } catch {
+    return { error: "Falha ao enviar o e-mail" };
+  }
+  return { ok: `Ingressos reenviados para ${order.buyerEmail}` };
 }
