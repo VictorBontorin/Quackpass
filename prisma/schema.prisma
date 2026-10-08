@@ -1,0 +1,270 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+}
+
+/// Quem paga a taxa da plataforma
+enum FeePayer {
+  BUYER
+  PRODUCER
+}
+
+enum DiscountType {
+  PERCENT
+  FIXED
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  FAILED
+  EXPIRED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  PIX
+  CREDIT_CARD
+  DEBIT_CARD
+  FREE
+}
+
+enum TicketStatus {
+  VALID
+  USED
+  CANCELLED
+}
+
+model Producer {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  document     String // CPF ou CNPJ, só dígitos
+  phone        String
+  /// Id do recebedor no gateway (Pagar.me) para o split
+  recipientId  String?
+  bankHolder   String?
+  bankCode     String?
+  bankBranch   String?
+  bankAccount  String?
+  bankAccountDigit String?
+  bankAccountType  String? // checking | savings
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  events      Event[]
+  advertisers Advertiser[]
+}
+
+model Event {
+  id          String      @id @default(cuid())
+  producerId  String
+  slug        String      @unique
+  title       String
+  description String      @default("")
+  venueName   String
+  address     String
+  city        String
+  state       String
+  startsAt    DateTime
+  endsAt      DateTime?
+  bannerUrl   String?
+  minAge      Int?
+  status      EventStatus @default(DRAFT)
+  feePayer    FeePayer    @default(BUYER)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  producer    Producer     @relation(fields: [producerId], references: [id])
+  ticketTypes TicketType[]
+  coupons     Coupon[]
+  orders      Order[]
+  tickets     Ticket[]
+
+  @@index([producerId])
+  @@index([status, startsAt])
+}
+
+/// Ex.: Pista, VIP, Camarote
+model TicketType {
+  id          String  @id @default(cuid())
+  eventId     String
+  name        String
+  description String  @default("")
+  sortOrder   Int     @default(0)
+  active      Boolean @default(true)
+
+  event   Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  batches Batch[]
+
+  @@index([eventId])
+}
+
+/// Lote: preço + quantidade + janela de vendas. O primeiro lote disponível de cada tipo é o que está à venda.
+model Batch {
+  id           String    @id @default(cuid())
+  ticketTypeId String
+  name         String
+  priceCents   Int
+  /// Se preenchido, oferece meia-entrada neste valor
+  halfPriceCents Int?
+  quantity     Int
+  /// Vendidos + reservados (pedidos pendentes). Atualizado atomicamente.
+  sold         Int       @default(0)
+  maxPerOrder  Int       @default(10)
+  salesStart   DateTime?
+  salesEnd     DateTime?
+  sortOrder    Int       @default(0)
+  active       Boolean   @default(true)
+
+  ticketType TicketType  @relation(fields: [ticketTypeId], references: [id], onDelete: Cascade)
+  items      OrderItem[]
+  tickets    Ticket[]
+
+  @@index([ticketTypeId])
+}
+
+/// Anunciante/promoter cadastrado pelo produtor. Cada anunciante tem cupons.
+model Advertiser {
+  id         String   @id @default(cuid())
+  producerId String
+  name       String
+  email      String?
+  phone      String?
+  instagram  String?
+  createdAt  DateTime @default(now())
+
+  producer Producer @relation(fields: [producerId], references: [id])
+  coupons  Coupon[]
+  orders   Order[]
+
+  @@index([producerId])
+}
+
+model Coupon {
+  id           String       @id @default(cuid())
+  eventId      String
+  advertiserId String?
+  /// Sempre em MAIÚSCULAS
+  code         String
+  discountType DiscountType @default(PERCENT)
+  /// Percentual (0-100) ou centavos, conforme discountType
+  value        Int
+  maxUses      Int?
+  /// Usos de pedidos pagos + pendentes. Atualizado atomicamente.
+  uses         Int          @default(0)
+  validUntil   DateTime?
+  active       Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+
+  event      Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  advertiser Advertiser? @relation(fields: [advertiserId], references: [id])
+  orders     Order[]
+
+  @@unique([eventId, code])
+}
+
+model Order {
+  id             String        @id @default(cuid())
+  eventId        String
+  status         OrderStatus   @default(PENDING)
+  paymentMethod  PaymentMethod
+  installments   Int           @default(1)
+
+  buyerName      String
+  buyerEmail     String
+  buyerDocument  String
+  buyerPhone     String
+
+  couponId       String?
+  advertiserId   String?
+
+  subtotalCents  Int
+  discountCents  Int           @default(0)
+  feeCents       Int
+  totalCents     Int
+  /// Quanto vai para o produtor no split
+  producerCents  Int
+  /// Quanto fica com a plataforma no split
+  platformCents  Int
+
+  gatewayOrderId String?       @unique
+  gatewayChargeId String?
+  pixQrCode      String?
+  pixQrCodeUrl   String?
+  /// URL de autenticação 3DS (cartão de débito)
+  authUrl        String?
+  failureReason  String?
+
+  expiresAt      DateTime
+  paidAt         DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  event      Event       @relation(fields: [eventId], references: [id])
+  coupon     Coupon?     @relation(fields: [couponId], references: [id])
+  advertiser Advertiser? @relation(fields: [advertiserId], references: [id])
+  items      OrderItem[]
+  tickets    Ticket[]
+
+  @@index([eventId, status])
+  @@index([status, expiresAt])
+  @@index([advertiserId])
+  @@index([buyerEmail])
+}
+
+model OrderItem {
+  id             String  @id @default(cuid())
+  orderId        String
+  batchId        String
+  quantity       Int
+  half           Boolean @default(false)
+  unitPriceCents Int
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  batch Batch @relation(fields: [batchId], references: [id])
+
+  @@index([orderId])
+  @@index([batchId])
+}
+
+model Ticket {
+  id          String       @id @default(cuid())
+  /// Código impresso no QR. Aleatório e impossível de adivinhar.
+  code        String       @unique
+  orderId     String
+  eventId     String
+  batchId     String
+  half        Boolean      @default(false)
+  holderName  String
+  status      TicketStatus @default(VALID)
+  checkedInAt DateTime?
+  createdAt   DateTime     @default(now())
+
+  order Order @relation(fields: [orderId], references: [id])
+  event Event @relation(fields: [eventId], references: [id])
+  batch Batch @relation(fields: [batchId], references: [id])
+
+  @@index([eventId, status])
+  @@index([orderId])
+}
+
+/// Guarda webhooks já processados (idempotência: o gateway pode reenviar)
+model WebhookEvent {
+  id          String   @id
+  type        String
+  receivedAt  DateTime @default(now())
+}

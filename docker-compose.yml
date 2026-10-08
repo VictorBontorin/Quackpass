@@ -1,0 +1,22 @@
+# Ambiente local: Postgres + app. Uso: docker compose up --build
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: quack
+      POSTGRES_PASSWORD: quack
+      POSTGRES_DB: quackpass
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+
+  app:
+    build: .
+    depends_on: [db]
+    ports: ["3000:3000"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://quack:quack@db:5432/quackpass
+      DIRECT_URL: postgresql://quack:quack@db:5432/quackpass
+
+volumes:
+  pgdata:
