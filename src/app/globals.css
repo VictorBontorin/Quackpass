@@ -5,7 +5,9 @@
 :root {
   color-scheme: light;
   /* Cor de destaque da página do evento (o produtor escolhe) */
-  --accent: #1d4ed8;
+  --accent: #facc15;
+  --accent-fg: #0f172a;
+  --accent-ink: #a16207;
 }
 
 body {
@@ -23,10 +25,10 @@ body {
     @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
   }
   .btn-primary {
-    @apply btn bg-brand-600 text-white hover:bg-brand-700;
+    @apply btn bg-brand-400 text-slate-900 hover:bg-brand-500;
   }
   .btn-accent {
-    @apply btn bg-[var(--accent)] text-white hover:brightness-110;
+    @apply btn bg-[var(--accent)] text-[var(--accent-fg)] hover:brightness-110;
   }
   .btn-secondary {
     @apply btn border border-slate-300 bg-white text-slate-800 hover:bg-slate-50;

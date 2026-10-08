@@ -121,7 +121,7 @@ model Event {
   /// Blocos de conteúdo da página (texto, imagem, galeria, atrações, vídeo, FAQ). Ver src/lib/content.ts
   content     Json        @default("[]")
   /// Cor de destaque da página do evento
-  accentColor String      @default("#1d4ed8")
+  accentColor String      @default("#facc15")
   showMap     Boolean     @default(true)
   minAge      Int         @default(18)
   status      EventStatus @default(DRAFT)

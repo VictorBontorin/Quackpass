@@ -1,3 +1,4 @@
+import { accentVars } from "@/lib/content";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { MailIcon } from "@/components/Icons";
@@ -31,7 +32,7 @@ export default async function OrderPage({ params }: { params: { id: string } }) 
   const ev = order.event;
 
   return (
-    <div className="container-page max-w-2xl space-y-6 py-10" style={{ "--accent": ev.accentColor } as React.CSSProperties}>
+    <div className="container-page max-w-2xl space-y-6 py-10" style={accentVars(ev.accentColor)}>
       <div>
         <p className="text-xs text-slate-500">Pedido {order.id}</p>
         <h1 className="text-2xl font-extrabold">{ev.title}</h1>
@@ -105,7 +106,7 @@ export default async function OrderPage({ params }: { params: { id: string } }) 
                   {t.batch.ticketType.name} · {t.batch.name}
                 </p>
                 <p className="text-sm text-slate-700">{t.holderName}</p>
-                <p className="font-mono text-sm tracking-widest text-[var(--accent)]">{formatTicketCode(t.code)}</p>
+                <p className="font-mono text-sm tracking-widest text-[var(--accent-ink)]">{formatTicketCode(t.code)}</p>
                 {t.status === "USED" && <span className="badge bg-slate-100 text-slate-700">Utilizado</span>}
                 <Link href={`/ingresso/${t.code}`} className="block text-xs text-slate-500 underline">
                   Abrir só este ingresso (para enviar a um amigo)

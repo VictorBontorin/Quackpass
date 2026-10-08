@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { z } from "zod";
 
 /** Blocos que o produtor monta na página do evento. Guardados em Event.content (JSON). */
@@ -45,14 +46,26 @@ export function youtubeEmbed(input: string): string | null {
   }
 }
 
-/** Cores pré-aprovadas: todas com bom contraste com texto branco. */
+/**
+ * Cores pré-aprovadas para a página do evento.
+ * fg = cor do texto em cima da cor (botões); ink = a cor usada como texto/ícone sobre fundo branco.
+ * Assim o amarelo fica legível: botão amarelo com texto escuro e textos em dourado escuro.
+ */
 export const ACCENT_COLORS = [
-  { value: "#1d4ed8", name: "Azul" },
-  { value: "#0f766e", name: "Verde-petróleo" },
-  { value: "#15803d", name: "Verde" },
-  { value: "#7c3aed", name: "Roxo" },
-  { value: "#be123c", name: "Vermelho" },
-  { value: "#c2410c", name: "Laranja" },
-  { value: "#a16207", name: "Dourado" },
-  { value: "#0f172a", name: "Preto" },
+  { value: "#facc15", name: "Amarelo", fg: "#0f172a", ink: "#a16207" },
+  { value: "#1d4ed8", name: "Azul", fg: "#ffffff", ink: "#1d4ed8" },
+  { value: "#0f766e", name: "Verde-petróleo", fg: "#ffffff", ink: "#0f766e" },
+  { value: "#15803d", name: "Verde", fg: "#ffffff", ink: "#15803d" },
+  { value: "#7c3aed", name: "Roxo", fg: "#ffffff", ink: "#7c3aed" },
+  { value: "#be123c", name: "Vermelho", fg: "#ffffff", ink: "#be123c" },
+  { value: "#c2410c", name: "Laranja", fg: "#ffffff", ink: "#c2410c" },
+  { value: "#0f172a", name: "Preto", fg: "#ffffff", ink: "#0f172a" },
 ];
+
+export const DEFAULT_ACCENT = ACCENT_COLORS[0].value;
+
+/** Variáveis CSS da cor do evento: --accent (fundo), --accent-fg (texto no fundo), --accent-ink (texto no branco). */
+export function accentVars(color: string): CSSProperties {
+  const c = ACCENT_COLORS.find((a) => a.value === color) ?? { value: color, fg: "#ffffff", ink: color };
+  return { "--accent": c.value, "--accent-fg": c.fg, "--accent-ink": c.ink } as CSSProperties;
+}

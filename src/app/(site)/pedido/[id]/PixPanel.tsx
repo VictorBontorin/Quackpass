@@ -52,7 +52,7 @@ export function PixPanel(props: {
       <p className="text-lg font-bold">Pague {props.totalLabel} com Pix</p>
       <p className="text-sm text-slate-500">
         Os ingressos ficam reservados por{" "}
-        <span className="font-mono font-semibold text-[var(--accent)]">
+        <span className="font-mono font-semibold text-[var(--accent-ink)]">
           {String(mm).padStart(2, "0")}:{String(ss).padStart(2, "0")}
         </span>
       </p>

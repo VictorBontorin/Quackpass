@@ -21,7 +21,7 @@ export function Door({ eventId, initialUsed, total }: { eventId: string; initial
             role="tab"
             aria-selected={tab === k}
             onClick={() => setTab(k)}
-            className={`rounded-lg py-2.5 text-sm font-semibold ${tab === k ? "bg-brand-600 text-white" : "text-slate-400"}`}
+            className={`rounded-lg py-2.5 text-sm font-semibold ${tab === k ? "bg-brand-400 text-slate-900" : "text-slate-400"}`}
           >
             {label}
           </button>

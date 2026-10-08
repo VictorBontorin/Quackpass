@@ -1,6 +1,6 @@
 import type { Event, Producer } from "@prisma/client";
 import { CalendarIcon, IdIcon, MailIcon, PhoneIcon, PinIcon, RefundIcon, ShieldIcon } from "@/components/Icons";
-import { parseContent, youtubeEmbed, type Block } from "@/lib/content";
+import { accentVars, parseContent, youtubeEmbed, type Block } from "@/lib/content";
 import { refundPolicyText } from "@/lib/policy";
 import { RichText } from "@/lib/text";
 
@@ -25,7 +25,7 @@ export function EventView({
   const mapsLink = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress)}`;
 
   return (
-    <div style={{ "--accent": event.accentColor } as React.CSSProperties}>
+    <div style={accentVars(event.accentColor)}>
       {notice}
       <div className="container-page pt-6">
         <div className="overflow-hidden rounded-2xl bg-slate-200">
@@ -45,11 +45,11 @@ export function EventView({
             <span className="badge bg-slate-900 text-white">+{event.minAge} anos</span>
             <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl">{event.title}</h1>
             <div className="grid gap-3 sm:grid-cols-2">
-              <InfoItem icon={<CalendarIcon className="h-5 w-5 text-[var(--accent)]" />} title={capitalize(longDate(event.startsAt))}>
+              <InfoItem icon={<CalendarIcon className="h-5 w-5 text-[var(--accent-ink)]" />} title={capitalize(longDate(event.startsAt))}>
                 {time(event.startsAt)}
                 {event.endsAt && ` às ${time(event.endsAt)}`}
               </InfoItem>
-              <InfoItem icon={<PinIcon className="h-5 w-5 text-[var(--accent)]" />} title={event.venueName}>
+              <InfoItem icon={<PinIcon className="h-5 w-5 text-[var(--accent-ink)]" />} title={event.venueName}>
                 <a href={mapsLink} target="_blank" rel="noopener noreferrer" className="hover:underline">
                   {event.address}, {event.city}/{event.state}
                 </a>
@@ -227,7 +227,7 @@ function BlockView({ block }: { block: Block }) {
             {block.items.map((it, i) => (
               <details key={i} className="group px-4 py-3">
                 <summary className="cursor-pointer list-none font-semibold marker:hidden">
-                  <span className="mr-2 inline-block text-[var(--accent)] transition group-open:rotate-90">›</span>
+                  <span className="mr-2 inline-block text-[var(--accent-ink)] transition group-open:rotate-90">›</span>
                   {it.q}
                 </summary>
                 <RichText text={it.a} className="mt-2 pl-5 text-sm text-slate-600" />

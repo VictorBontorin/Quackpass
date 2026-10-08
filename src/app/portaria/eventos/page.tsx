@@ -25,7 +25,7 @@ export default async function StaffEvents() {
         {events.length === 0 && <p className="card text-slate-400">Nenhum evento hoje ou nos próximos dias.</p>}
         {events.map((e) => (
           <Link key={e.id} href={`/portaria/eventos/${e.id}`} className="card block active:bg-slate-800">
-            <p className="text-xs font-semibold uppercase text-brand-500">{dateTime(e.startsAt)}</p>
+            <p className="text-xs font-semibold uppercase text-brand-400">{dateTime(e.startsAt)}</p>
             <p className="text-lg font-bold">{e.title}</p>
             <p className="text-sm text-slate-400">
               {e.venueName} · {e._count.tickets} ingresso(s)

@@ -48,7 +48,7 @@ function layout(title: string, body: string) {
   return `<!doctype html><html lang="pt-BR"><body style="margin:0;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#0f172a">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:24px 12px"><tr><td align="center">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:12px;border:1px solid #e2e8f0">
-<tr><td style="padding:20px 24px;border-bottom:1px solid #e2e8f0;font-size:20px;font-weight:bold;color:#1d4ed8">${esc(env.companyName)}</td></tr>
+<tr><td style="padding:20px 24px;border-bottom:1px solid #e2e8f0;font-size:20px;font-weight:bold;color:#a16207">${esc(env.companyName)}</td></tr>
 <tr><td style="padding:24px">
 <h1 style="margin:0 0 12px;font-size:20px">${esc(title)}</h1>
 ${body}
@@ -85,7 +85,7 @@ export async function sendTicketsEmail(orderId: string, to?: string) {
 <div style="font-size:12px;color:#64748b">INGRESSO ${i + 1} DE ${order.tickets.length}</div>
 <div style="font-size:16px;font-weight:bold;margin:4px 0">${esc(t.batch.ticketType.name)} · ${esc(t.batch.name)}</div>
 <div style="font-size:14px">${esc(t.holderName)}</div>
-<div style="font-family:monospace;font-size:15px;letter-spacing:2px;color:#1d4ed8;margin-top:6px">${formatTicketCode(t.code)}</div>
+<div style="font-family:monospace;font-size:15px;letter-spacing:2px;color:#a16207;margin-top:6px">${formatTicketCode(t.code)}</div>
 ${t.status === "CANCELLED" ? '<div style="color:#b91c1c;font-weight:bold">CANCELADO</div>' : ""}
 </td></tr></table>`,
     )
@@ -99,7 +99,7 @@ ${ticketsHtml}
 <p style="margin:16px 0;padding:12px;background:#fef9c3;border-radius:8px;font-size:13px">
 Evento para maiores de ${ev.minAge} anos. Leve um documento oficial com foto.
 Cada QR Code dá direito a uma entrada e só pode ser usado uma vez.</p>
-<p style="margin:0 0 16px"><a href="${orderUrl}" style="display:inline-block;background:#1d4ed8;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:bold">Ver meus ingressos</a></p>
+<p style="margin:0 0 16px"><a href="${orderUrl}" style="display:inline-block;background:#facc15;color:#0f172a;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:bold">Ver meus ingressos</a></p>
 <table role="presentation" width="100%" style="font-size:13px;color:#334155">
 <tr><td>Pedido</td><td align="right">${order.id}</td></tr>
 ${order.discountCents > 0 ? `<tr><td>Desconto</td><td align="right">- ${brl(order.discountCents)}</td></tr>` : ""}
@@ -155,7 +155,7 @@ export async function safely(fn: () => Promise<unknown>, label: string) {
 // ---------- Produtores ----------
 
 const btn = (href: string, label: string) =>
-  `<p style="margin:20px 0"><a href="${href}" style="display:inline-block;background:#1d4ed8;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:bold">${esc(label)}</a></p>`;
+  `<p style="margin:20px 0"><a href="${href}" style="display:inline-block;background:#facc15;color:#0f172a;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:bold">${esc(label)}</a></p>`;
 
 type Lead = {
   id: string;

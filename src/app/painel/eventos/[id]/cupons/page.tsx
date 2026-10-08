@@ -39,7 +39,7 @@ export default async function CouponsPage({ params }: { params: { id: string } }
                 </option>
               ))}
             </select>
-            <Link href="/painel/anunciantes" className="text-xs text-brand-600">
+            <Link href="/painel/anunciantes" className="text-xs text-brand-700">
               + cadastrar anunciante
             </Link>
           </div>

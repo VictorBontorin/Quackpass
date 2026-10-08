@@ -17,7 +17,7 @@ export function EventCard({
         )}
       </div>
       <div className="space-y-1 p-4">
-        <p className="text-xs font-semibold uppercase text-brand-600">{dateTime(event.startsAt)}</p>
+        <p className="text-xs font-semibold uppercase text-brand-700">{dateTime(event.startsAt)}</p>
         <h3 className="line-clamp-2 font-bold text-slate-900 group-hover:text-brand-700">{event.title}</h3>
         <p className="text-sm text-slate-500">
           {event.venueName} · {event.city}/{event.state}

@@ -5,15 +5,16 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Azul institucional: transmite confiança e tem bom contraste com branco
+        // Amarelo "pato": botões amarelos com texto escuro; textos/links em dourado escuro (boa leitura no branco)
         brand: {
-          50: "#eff6ff",
-          100: "#dbeafe",
-          200: "#bfdbfe",
-          500: "#2563eb",
-          600: "#1d4ed8",
-          700: "#1e40af",
-          800: "#1e3a8a",
+          50: "#fefce8",
+          100: "#fef9c3",
+          200: "#fde68a",
+          400: "#facc15",
+          500: "#eab308",
+          600: "#ca8a04",
+          700: "#a16207",
+          800: "#854d0e",
         },
       },
       fontFamily: {

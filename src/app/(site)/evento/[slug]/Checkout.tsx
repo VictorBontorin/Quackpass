@@ -224,7 +224,7 @@ export function Checkout(props: {
                 aria-checked={method === m}
                 key={m}
                 onClick={() => setMethod(m)}
-                className={`btn border ${method === m ? "border-[var(--accent)] bg-[var(--accent)] text-white" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
+                className={`btn border ${method === m ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-fg)]" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
               >
                 {label}
               </button>

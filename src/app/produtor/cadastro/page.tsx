@@ -30,7 +30,7 @@ export default function SignupPage() {
             ["Acesso liberado", "Com o cadastro aprovado, você cria e publica os seus eventos."],
           ].map(([t, d], i) => (
             <li key={t} className="flex gap-3">
-              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-brand-600 text-sm font-bold text-white">{i + 1}</span>
+              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-brand-400 text-sm font-bold text-slate-900">{i + 1}</span>
               <div>
                 <p className="font-semibold">{t}</p>
                 <p className="text-slate-600">{d}</p>

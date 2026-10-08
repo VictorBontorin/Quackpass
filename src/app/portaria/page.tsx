@@ -12,7 +12,7 @@ export default async function PortariaLogin() {
   return (
     <div className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-4">
       <p className="text-center text-lg font-extrabold">
-        {env.companyName} <span className="text-brand-500">Portaria</span>
+        {env.companyName} <span className="text-brand-400">Portaria</span>
       </p>
       <p className="mb-6 text-center text-sm text-slate-400">Acesso da equipe de entrada</p>
       <ActionForm action={staffLogin} className="card space-y-4">

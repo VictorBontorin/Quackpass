@@ -1,3 +1,4 @@
+import { accentVars } from "@/lib/content";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { dateTime } from "@/lib/format";
@@ -16,9 +17,9 @@ export default async function TicketPage({ params }: { params: { code: string } 
   const ev = ticket.event;
 
   return (
-    <div className="container-page max-w-sm py-10" style={{ "--accent": ev.accentColor } as React.CSSProperties}>
+    <div className="container-page max-w-sm py-10" style={accentVars(ev.accentColor)}>
       <div className="card overflow-hidden p-0 text-center">
-        <div className="bg-[var(--accent)] px-5 py-4 text-white">
+        <div className="bg-[var(--accent)] px-5 py-4 text-[var(--accent-fg)]">
           <p className="text-xs font-semibold uppercase opacity-90">{dateTime(ev.startsAt)}</p>
           <h1 className="text-xl font-extrabold">{ev.title}</h1>
         </div>
@@ -28,7 +29,7 @@ export default async function TicketPage({ params }: { params: { code: string } 
           </p>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={qr} alt="QR Code do ingresso" className={`mx-auto h-64 w-64 ${ticket.status !== "VALID" ? "opacity-30" : ""}`} />
-          <p className="font-mono text-lg tracking-widest text-[var(--accent)]">{formatTicketCode(ticket.code)}</p>
+          <p className="font-mono text-lg tracking-widest text-[var(--accent-ink)]">{formatTicketCode(ticket.code)}</p>
           <div>
             <p className="font-bold">
               {ticket.batch.ticketType.name} · {ticket.batch.name}

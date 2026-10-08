@@ -83,7 +83,7 @@ export default async function TicketsPage({ params, searchParams }: { params: { 
             )}
 
             <details className="rounded-xl border border-slate-200 p-3">
-              <summary className="cursor-pointer text-sm font-semibold text-brand-600">+ Adicionar lote em {t.name}</summary>
+              <summary className="cursor-pointer text-sm font-semibold text-brand-700">+ Adicionar lote em {t.name}</summary>
               <ActionForm action={createBatch.bind(null, event.id, t.id)} className="mt-3 grid gap-3 sm:grid-cols-3">
                 <div>
                   <label className="label">Nome</label>

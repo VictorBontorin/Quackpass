@@ -90,7 +90,7 @@ export default async function OrdersPage({
               <tr key={o.id}>
                 <td className="whitespace-nowrap text-slate-500">{dateTime(o.createdAt)}</td>
                 <td>
-                  <a href={`${env.appUrl}/pedido/${o.id}`} target="_blank" className="font-medium hover:text-brand-600">
+                  <a href={`${env.appUrl}/pedido/${o.id}`} target="_blank" className="font-medium hover:text-brand-700">
                     {o.buyerName}
                   </a>
                   <p className="text-xs text-slate-500">{o.buyerEmail}</p>

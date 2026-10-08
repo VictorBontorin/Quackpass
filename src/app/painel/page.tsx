@@ -57,7 +57,7 @@ export default async function PanelHome() {
               {events.map((e) => (
                 <tr key={e.id} className="hover:bg-slate-50">
                   <td>
-                    <Link href={`/painel/eventos/${e.id}`} className="font-semibold hover:text-brand-600">
+                    <Link href={`/painel/eventos/${e.id}`} className="font-semibold hover:text-brand-700">
                       {e.title}
                     </Link>
                   </td>
