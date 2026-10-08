@@ -6,6 +6,7 @@ const styles: Record<string, [string, string]> = {
   PAID: ["Pago", "bg-emerald-50 text-emerald-700"],
   FAILED: ["Recusado", "bg-red-50 text-red-700"],
   EXPIRED: ["Expirado", "bg-slate-100 text-slate-500"],
+  REFUNDING: ["Reembolsando", "bg-amber-50 text-amber-800"],
   REFUNDED: ["Reembolsado", "bg-purple-50 text-purple-700"],
 };
 

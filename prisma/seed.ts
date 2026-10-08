@@ -3,7 +3,8 @@ import bcrypt from "bcryptjs";
 
 const db = new PrismaClient();
 
-// Dados de demonstração. Login: produtor@demo.com / demo12345
+// Dados de demonstração.
+// Produtor: produtor@demo.com / demo12345 · Admin: admin@demo.com / admin12345 · Portaria: folks.porta / porta123
 async function main() {
   const producer = await db.producer.upsert({
     where: { email: "produtor@demo.com" },
@@ -15,6 +16,42 @@ async function main() {
       document: "12345678909",
       phone: "41999999999",
       recipientId: "mock_rp_demo",
+      status: "APPROVED",
+      contactName: "Carlos Folks",
+      city: "Curitiba",
+      state: "PR",
+    },
+  });
+
+  // Administrador da plataforma (em produção, crie com: npm run admin:create)
+  await db.adminUser.upsert({
+    where: { email: "admin@demo.com" },
+    update: {},
+    create: { email: "admin@demo.com", name: "Admin Demo", passwordHash: await bcrypt.hash("admin12345", 10) },
+  });
+  // Acesso de portaria: login "folks.porta" / senha "porta123"
+  await db.staffMember.upsert({
+    where: { login: "folks.porta" },
+    update: {},
+    create: { producerId: producer.id, name: "João (porta)", login: "folks.porta", passwordHash: await bcrypt.hash("porta123", 10) },
+  });
+  // Um cadastro pendente, para ver o fluxo de aprovação
+  await db.producer.upsert({
+    where: { email: "novacasa@demo.com" },
+    update: {},
+    create: {
+      name: "Nova Casa Bar",
+      contactName: "Mariana Souza",
+      email: "novacasa@demo.com",
+      passwordHash: await bcrypt.hash("demo12345", 10),
+      document: "12345678909",
+      phone: "41988887777",
+      city: "Curitiba",
+      state: "PR",
+      instagram: "novacasabar",
+      venueType: "Bar",
+      eventsPerMonth: "5 a 10",
+      message: "Casa para 400 pessoas, fazemos festas toda sexta e sábado.",
     },
   });
 

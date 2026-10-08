@@ -1,6 +1,6 @@
 import { requireOwnedEvent } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { Scanner } from "./Scanner";
+import { Scanner } from "@/components/checkin/Scanner";
 
 export default async function CheckinPage({ params }: { params: { id: string } }) {
   const { event } = await requireOwnedEvent(params.id);

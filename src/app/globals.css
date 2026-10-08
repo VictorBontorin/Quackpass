@@ -59,3 +59,22 @@ body {
     @apply text-lg font-bold text-slate-900;
   }
 }
+
+/* Tema escuro da portaria (tela escura na balada não ofusca a equipe) */
+@layer components {
+  .theme-dark {
+    @apply bg-slate-950 text-slate-100;
+  }
+  .theme-dark .card {
+    @apply border-slate-800 bg-slate-900 shadow-none;
+  }
+  .theme-dark .input {
+    @apply border-slate-700 bg-slate-950 text-slate-100 placeholder:text-slate-500 focus:ring-brand-800;
+  }
+  .theme-dark .label {
+    @apply text-slate-300;
+  }
+  .theme-dark .btn-secondary {
+    @apply border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800;
+  }
+}

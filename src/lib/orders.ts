@@ -54,7 +54,7 @@ export async function createOrder(input: CheckoutInput) {
     where: { id: input.eventId },
     include: { producer: true, ticketTypes: { where: { active: true }, include: { batches: true } } },
   });
-  if (!event || event.status !== "PUBLISHED") throw new CheckoutError("Evento indisponível");
+  if (!event || event.status !== "PUBLISHED" || event.producer.status !== "APPROVED") throw new CheckoutError("Evento indisponível");
   if ((event.endsAt ?? event.startsAt) < new Date()) throw new CheckoutError("Este evento já aconteceu");
 
   // Agrupa itens repetidos
@@ -203,7 +203,9 @@ export async function markOrderPaid(orderId: string) {
   const issued = await db.$transaction(async (tx) => {
     const order = await tx.order.findUnique({ where: { id: orderId }, include: { items: true } });
     if (!order || order.status === "PAID") return false;
-    if (!["PENDING", "EXPIRED", "FAILED"].includes(order.status)) return false;
+    // CANCELLED: Pix gerado antes do cancelamento do evento e pago depois. Marca como pago
+    // para logo em seguida reembolsar (abaixo), em vez de ficar com o dinheiro sem ingresso.
+    if (!["PENDING", "EXPIRED", "FAILED", "CANCELLED"].includes(order.status)) return false;
 
     const changed = await tx.order.updateMany({
       where: { id: orderId, status: order.status },
@@ -232,9 +234,16 @@ export async function markOrderPaid(orderId: string) {
     });
     return true;
   });
+  if (!issued) return false;
+  // Pago depois que o evento foi cancelado (ex.: Pix no último segundo): reembolsa em vez de entregar
+  const ev = await db.order.findUnique({ where: { id: orderId }, select: { event: { select: { status: true } } } });
+  if (ev?.event.status === "CANCELLED") {
+    await refundOrder(orderId, "CANCELLATION").catch((err) => console.error("[cancelamento] reembolso falhou; o cron tenta de novo", orderId, err));
+    return true;
+  }
   // Só quem de fato emitiu os ingressos manda o e-mail (evita e-mail duplicado)
-  if (issued) await safely(() => sendTicketsEmail(orderId), `ingressos ${orderId}`);
-  return issued;
+  await safely(() => sendTicketsEmail(orderId), `ingressos ${orderId}`);
+  return true;
 }
 
 /** Expira pedidos pendentes vencidos (chamado pelo cron e também sob demanda). */
@@ -253,7 +262,7 @@ export async function expireStaleOrders(limit = 500) {
 /** Sincroniza com o gateway (usado pelo webhook e pelo polling da tela de pagamento). */
 export async function syncOrderWithGateway(orderId: string) {
   const order = await db.order.findUnique({ where: { id: orderId } });
-  if (!order?.gatewayOrderId || order.status === "REFUNDED") return order?.status;
+  if (!order?.gatewayOrderId || order.status === "REFUNDED" || order.status === "REFUNDING") return order?.status;
   const status = await paymentProvider().getStatus(order.gatewayOrderId);
   if (status === "paid") await markOrderPaid(order.id);
   else if (status === "refunded") await markOrderRefunded(order.id);
@@ -265,11 +274,17 @@ export async function syncOrderWithGateway(orderId: string) {
  * Marca o pedido como reembolsado: cancela os ingressos e devolve o estoque e o uso do cupom.
  * Idempotente (só age se o pedido estiver PAID).
  */
-export async function markOrderRefunded(orderId: string, by: "BUYER" | "PRODUCER" | "GATEWAY" = "GATEWAY") {
+export type RefundBy = "BUYER" | "PRODUCER" | "ADMIN" | "CANCELLATION" | "GATEWAY";
+
+/**
+ * Marca o pedido como reembolsado: cancela os ingressos e devolve o estoque e o uso do cupom.
+ * Idempotente (só age se o pedido estiver PAID ou REFUNDING).
+ */
+export async function markOrderRefunded(orderId: string, by: RefundBy = "GATEWAY") {
   const done = await db.$transaction(async (tx) => {
     const changed = await tx.order.updateMany({
-      where: { id: orderId, status: "PAID" },
-      data: { status: "REFUNDED", refundedAt: new Date(), refundedBy: by },
+      where: { id: orderId, status: { in: ["PAID", "REFUNDING"] } },
+      data: { status: "REFUNDED", refundedAt: new Date(), refundedBy: by, refundError: null },
     });
     if (changed.count === 0) return false;
     const order = await tx.order.findUniqueOrThrow({ where: { id: orderId }, include: { items: true } });
@@ -302,12 +317,16 @@ export function selfRefundStatus(
 
 /**
  * Faz o reembolso total no gateway e cancela os ingressos.
- * O produtor pode reembolsar a qualquer momento; o comprador só dentro da política do evento.
+ * - Comprador: só dentro da política do evento.
+ * - Produtor, administrador e cancelamento do evento: a qualquer momento.
+ * O pedido é "travado" em REFUNDING antes de chamar o gateway, então dois cliques
+ * (ou o cron e o painel ao mesmo tempo) nunca estornam o mesmo pedido duas vezes.
  */
-export async function refundOrder(orderId: string, by: "BUYER" | "PRODUCER") {
+export async function refundOrder(orderId: string, by: Exclude<RefundBy, "GATEWAY">) {
   const order = await db.order.findUnique({ where: { id: orderId }, include: { event: true } });
   if (!order) throw new RefundError("Pedido não encontrado");
   if (order.status === "REFUNDED") return;
+  if (order.status === "REFUNDING") throw new RefundError("Este reembolso já está em andamento");
   if (order.status !== "PAID") throw new RefundError("Só pedidos pagos podem ser reembolsados");
 
   if (by === "BUYER") {
@@ -316,15 +335,98 @@ export async function refundOrder(orderId: string, by: "BUYER" | "PRODUCER") {
     if (!check.allowed) throw new RefundError(check.reason ?? "Reembolso indisponível");
   }
 
+  const claimed = await db.order.updateMany({ where: { id: orderId, status: "PAID" }, data: { status: "REFUNDING" } });
+  if (claimed.count === 0) throw new RefundError("Este reembolso já está em andamento");
+
   if (order.totalCents > 0 && order.gatewayChargeId) {
-    const provider = paymentProvider();
-    if (!provider.refund) throw new RefundError("Gateway não suporta reembolso automático");
     try {
+      const provider = paymentProvider();
+      if (!provider.refund) throw new Error("Gateway não suporta reembolso automático");
       await provider.refund(order.gatewayChargeId);
     } catch (err) {
       console.error("[refund] gateway recusou", orderId, err);
+      const msg = err instanceof Error ? err.message : "erro desconhecido";
+      await db.order.updateMany({ where: { id: orderId, status: "REFUNDING" }, data: { status: "PAID", refundError: msg.slice(0, 500) } });
       throw new RefundError("O gateway de pagamento recusou o reembolso. Tente novamente ou fale com o suporte.");
     }
   }
   await markOrderRefunded(orderId, by);
+}
+
+// ---------- Cancelamento de evento ----------
+
+/**
+ * Cancela o evento: para as vendas, libera os pedidos pendentes e reembolsa todos os pagos.
+ * Os reembolsos rodam aqui (até o tempo-limite) e o cron termina o que faltar, inclusive
+ * novas tentativas de reembolsos que falharam e Pix pagos depois do cancelamento.
+ */
+export async function cancelEvent(eventId: string, reason: string) {
+  await db.event.updateMany({
+    where: { id: eventId, status: { not: "CANCELLED" } },
+    data: { status: "CANCELLED", cancelledAt: new Date(), cancelReason: reason || null },
+  });
+  return processCancelledEventRefunds(eventId, 20_000);
+}
+
+export async function processCancelledEventRefunds(eventId: string, timeBudgetMs = 20_000) {
+  const until = Date.now() + timeBudgetMs;
+  const pending = await db.order.findMany({ where: { eventId, status: "PENDING" }, select: { id: true } });
+  for (const o of pending) await releaseOrder(o.id, "CANCELLED", "Evento cancelado");
+
+  let refunded = 0;
+  let failed = 0;
+  const tried = new Set<string>();
+  while (Date.now() < until) {
+    const batch = await db.order.findMany({
+      where: { eventId, status: "PAID", id: { notIn: Array.from(tried) } },
+      select: { id: true },
+      take: 25,
+    });
+    if (batch.length === 0) break;
+    // 5 estornos em paralelo: rápido sem estourar o limite de requisições do gateway
+    for (let i = 0; i < batch.length; i += 5) {
+      await Promise.all(
+        batch.slice(i, i + 5).map(async ({ id }) => {
+          tried.add(id);
+          try {
+            await refundOrder(id, "CANCELLATION");
+            refunded++;
+          } catch {
+            failed++;
+          }
+        }),
+      );
+      if (Date.now() >= until) break;
+    }
+  }
+  const remaining = await db.order.count({ where: { eventId, status: { in: ["PAID", "REFUNDING"] } } });
+  return { refunded, failed, remaining };
+}
+
+/** Chamado pelo cron: continua os reembolsos de eventos cancelados e destrava reembolsos parados. */
+export async function processAllCancellations(timeBudgetMs = 40_000) {
+  const until = Date.now() + timeBudgetMs;
+
+  // Pedidos que ficaram "REFUNDING" por mais de 10 min (ex.: servidor caiu no meio): confere no gateway
+  const stuck = await db.order.findMany({
+    where: { status: "REFUNDING", updatedAt: { lt: new Date(Date.now() - 10 * 60_000) } },
+    select: { id: true, gatewayOrderId: true },
+    take: 50,
+  });
+  for (const o of stuck) {
+    const status = o.gatewayOrderId ? await paymentProvider().getStatus(o.gatewayOrderId).catch(() => null) : null;
+    if (status === "refunded") await markOrderRefunded(o.id, "CANCELLATION");
+    else await db.order.updateMany({ where: { id: o.id, status: "REFUNDING" }, data: { status: "PAID" } });
+  }
+
+  const events = await db.event.findMany({
+    where: { status: "CANCELLED", orders: { some: { status: { in: ["PAID", "PENDING"] } } } },
+    select: { id: true },
+    take: 20,
+  });
+  for (const e of events) {
+    const left = until - Date.now();
+    if (left <= 0) break;
+    await processCancelledEventRefunds(e.id, left);
+  }
 }

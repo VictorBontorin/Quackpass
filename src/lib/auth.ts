@@ -1,55 +1,44 @@
-import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "./db";
+import { COOKIES, MAX_AGE, signSession, verifySession, type Role } from "./session";
 
-export const SESSION_COOKIE = "qp_session";
-const MAX_AGE = 60 * 60 * 24 * 30;
-
-function secret() {
-  const s = process.env.AUTH_SECRET;
-  if (!s || s.length < 32) throw new Error("AUTH_SECRET precisa ter pelo menos 32 caracteres");
-  return new TextEncoder().encode(s);
-}
-
-export async function createSession(producerId: string) {
-  const token = await new SignJWT({ sub: producerId })
-    .setProtectedHeader({ alg: "HS256" })
-    .setIssuedAt()
-    .setExpirationTime(`${MAX_AGE}s`)
-    .sign(secret());
-  cookies().set(SESSION_COOKIE, token, {
+export async function createSession(role: Role, id: string) {
+  cookies().set(COOKIES[role], await signSession(role, id), {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
-    maxAge: MAX_AGE,
+    maxAge: MAX_AGE[role],
   });
 }
 
-export function destroySession() {
-  cookies().delete(SESSION_COOKIE);
+export function destroySession(role: Role) {
+  cookies().delete(COOKIES[role]);
 }
 
-export async function verifySessionToken(token: string | undefined): Promise<string | null> {
-  if (!token) return null;
-  try {
-    const { payload } = await jwtVerify(token, secret());
-    return typeof payload.sub === "string" ? payload.sub : null;
-  } catch {
-    return null;
-  }
+export function sessionId(role: Role): Promise<string | null> {
+  return verifySession(cookies().get(COOKIES[role])?.value, role);
 }
 
-export async function currentProducerId(): Promise<string | null> {
-  return verifySessionToken(cookies().get(SESSION_COOKIE)?.value);
+// ---------- Produtor ----------
+
+export function currentProducerId() {
+  return sessionId("producer");
 }
 
-/** Para páginas e actions do painel: retorna o produtor logado ou manda para o login. */
-export async function requireProducer() {
+/** Produtor logado, em qualquer situação (pendente, aprovado...). */
+export async function requireProducerSession() {
   const id = await currentProducerId();
   const producer = id ? await db.producer.findUnique({ where: { id } }) : null;
-  if (!producer) redirect("/produtor/login");
+  if (!producer || producer.status === "BLOCKED") redirect("/produtor/login");
+  return producer;
+}
+
+/** Produtor logado E aprovado. Quem ainda não foi aprovado vai para a tela de análise. */
+export async function requireProducer() {
+  const producer = await requireProducerSession();
+  if (producer.status !== "APPROVED") redirect("/produtor/aguardando");
   return producer;
 }
 
@@ -59,4 +48,29 @@ export async function requireOwnedEvent(eventId: string) {
   const event = await db.event.findFirst({ where: { id: eventId, producerId: producer.id } });
   if (!event) redirect("/painel");
   return { producer, event };
+}
+
+// ---------- Portaria ----------
+
+export async function currentStaff() {
+  const id = await sessionId("staff");
+  if (!id) return null;
+  const staff = await db.staffMember.findUnique({ where: { id }, include: { producer: true } });
+  if (!staff || !staff.active || staff.producer.status !== "APPROVED") return null;
+  return staff;
+}
+
+export async function requireStaff() {
+  const staff = await currentStaff();
+  if (!staff) redirect("/portaria");
+  return staff;
+}
+
+// ---------- Administração ----------
+
+export async function requireAdmin() {
+  const id = await sessionId("admin");
+  const admin = id ? await db.adminUser.findUnique({ where: { id } }) : null;
+  if (!admin) redirect("/admin/entrar");
+  return admin;
 }

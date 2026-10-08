@@ -2,6 +2,30 @@
 
 Plataforma de venda de ingressos para baladas, bares e eventos. Produtores cadastram seus eventos e vendem pela plataforma; a plataforma ganha uma taxa por ingresso vendido, sem mensalidade.
 
+## As quatro áreas
+
+Um único sistema (um deploy, um banco) com quatro áreas separadas, cada uma com endereço, visual e login próprios. O login de uma área não vale em outra.
+
+| Área | Endereço sugerido | Quem usa | O que faz |
+|---|---|---|---|
+| **Site** | `quackpass.com.br` | Comprador | Eventos, compra, pedido, ingresso, reembolso pelo site |
+| **Produtor** | `produtor.quackpass.com.br` | Dono da casa | Cadastro (pedido de parceria), eventos, lotes, cupons, anunciantes, pedidos, equipe da portaria, recebimento |
+| **Portaria** | `portaria.quackpass.com.br` | Equipe da porta | Só check-in (QR ou lista) e consulta de quem comprou. Não vê valores e não altera nada |
+| **Admin** | `admin.quackpass.com.br` | Você | Aprovação de produtores, eventos, pedidos de toda a plataforma, faturamento |
+
+Para separar por endereço, aponte os subdomínios para o mesmo deploy e configure `APP_URL`, `PRODUCER_URL`, `STAFF_URL` e `ADMIN_URL`. Sem essas variáveis tudo funciona em um endereço só (`/`, `/painel`, `/portaria`, `/admin`).
+
+### Aprovação de produtores
+1. O produtor preenche o cadastro (dados da casa, WhatsApp, Instagram, cidade...).
+2. Você recebe um e-mail (`ADMIN_NOTIFY_EMAIL`) e o cadastro aparece em **Admin → Produtores** com botão de WhatsApp.
+3. Você conversa, anota o que combinou e clica em **Aprovar**. O produtor recebe um e-mail e o painel é liberado.
+4. Antes disso ele só vê a tela "Cadastro em análise". **Bloquear** tira todos os eventos dele do ar na hora.
+
+Crie o seu login de administrador com:
+```bash
+npm run admin:create -- voce@seudominio.com.br "Seu Nome" "uma-senha-forte"
+```
+
 ## O que já tem
 
 | Área | Funcionalidades |
@@ -17,7 +41,9 @@ Plataforma de venda de ingressos para baladas, bares e eventos. Produtores cadas
 | **Ingresso** | Gerado assim que o pagamento é confirmado, com QR Code único por ingresso e página individual para enviar a um amigo |
 | **Painel de vendas** | Faturamento, ingressos por lote, vendas e comissões por anunciante, por forma de pagamento, lista de pedidos com busca, reembolso e reenvio de e-mail |
 | **Páginas institucionais** | Termos de uso, privacidade, política de reembolso, central de ajuda e página "para produtores" (modelos: revise com um advogado) |
-| **Check-in** | Página para a portaria: lê o QR pela câmera do celular (ou código digitado), mostra ✅ / ⚠️ já usado / ❌ inválido |
+| **Portaria** | O produtor cria logins para a equipe. Leitura do QR pela câmera do celular (ou código digitado) com ✅ / ⚠️ já usado / ❌ inválido, lista de compradores com busca por nome, CPF (mascarado), e-mail ou código, e "dar entrada" manual. Registra quem liberou cada entrada |
+| **Cancelamento de evento** | Para as vendas e reembolsa **todos** os compradores automaticamente (o cron termina o que faltar e tenta de novo os que falharem). Compradores recebem e-mail. Pix pago depois do cancelamento é reembolsado sozinho |
+| **Senha** | "Esqueci minha senha" com link por e-mail (vale 1 hora, uso único) |
 
 ## Modelo de cobrança
 
@@ -34,6 +60,7 @@ Exemplo: ingresso de R$ 50 com taxa paga pelo comprador → comprador paga R$ 55
 - **Pagamento idempotente:** confirmar o mesmo pagamento duas vezes (webhook repetido, polling) emite os ingressos uma única vez. Webhooks repetidos são descartados pela tabela `WebhookEvent`.
 - **Não confia no webhook:** o corpo do webhook só diz qual pedido mudou; o status real é sempre consultado na API do gateway.
 - **Check-in à prova de duplicidade:** vários leitores ao mesmo tempo nunca deixam o mesmo QR entrar duas vezes.
+- **Reembolso à prova de duplicidade:** o pedido é travado (`REFUNDING`) antes de chamar o gateway. Testado com 5 pedidos de reembolso simultâneos: exatamente 1 estorno.
 - **Página do evento em cache (ISR, 15s):** picos de acesso na divulgação não batem no banco a cada visita. O estoque real é conferido no checkout.
 - **Stateless:** o app pode rodar em várias instâncias atrás de um load balancer (sessão em JWT assinado no cookie).
 - **Dados do cartão nunca passam pelo servidor:** o navegador envia direto para a Pagar.me e recebe um token.
@@ -56,11 +83,16 @@ Requisitos: Node 20+ e Postgres 14+ (ou Docker).
 cp .env.example .env          # ajuste AUTH_SECRET
 npm install
 npx prisma migrate deploy     # cria as tabelas
-npm run db:seed               # evento de demonstração (login: produtor@demo.com / demo12345)
+npm run db:seed               # dados de demonstração (logins abaixo)
 npm run dev                   # http://localhost:3000
 ```
 
 Com Docker: `docker compose up --build`.
+
+Logins de demonstração:
+- Produtor: `produtor@demo.com` / `demo12345` em `/painel` (há também um cadastro pendente, `novacasa@demo.com`)
+- Admin: `admin@demo.com` / `admin12345` em `/admin`
+- Portaria: `folks.porta` / `porta123` em `/portaria`
 
 Sem `SMTP_URL`, os e-mails não são enviados: aparecem no log (e, com `EMAIL_PREVIEW_DIR`, são salvos como HTML para você abrir no navegador).
 
@@ -116,8 +148,7 @@ src/app/api/                      checkout, cupom, status do pedido, webhook, ch
 ## Próximos passos sugeridos
 
 - Envio do ingresso por WhatsApp
-- Usuários de equipe (portaria) com acesso só ao check-in
-- Reembolso automático de todos os compradores ao cancelar um evento
+- Check-in sem internet (lista baixada no celular)
 - Transferência de titularidade do ingresso
 - Lista VIP / nome na lista
 - Acesso do anunciante para ver as próprias vendas

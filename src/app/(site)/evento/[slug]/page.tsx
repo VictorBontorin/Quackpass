@@ -19,7 +19,7 @@ async function getEvent(slug: string) {
   return db.event.findUnique({
     where: { slug },
     include: {
-      producer: { select: { name: true } },
+      producer: { select: { name: true, status: true } },
       ticketTypes: { where: { active: true }, orderBy: { sortOrder: "asc" }, include: { batches: true } },
     },
   });
@@ -37,10 +37,10 @@ export async function generateMetadata({ params }: { params: { slug: string } })
 
 export default async function EventPage({ params }: { params: { slug: string } }) {
   const event = await getEvent(params.slug);
-  if (!event || event.status === "DRAFT") notFound();
+  if (!event || event.status === "DRAFT" || event.producer.status === "BLOCKED") notFound();
 
   const ended = (event.endsAt ?? event.startsAt) < new Date();
-  const salesOpen = event.status === "PUBLISHED" && !ended;
+  const salesOpen = event.status === "PUBLISHED" && event.producer.status === "APPROVED" && !ended;
 
   return (
     <EventView

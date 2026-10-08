@@ -3,7 +3,8 @@ import { requireOwnedEvent } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { env } from "@/lib/env";
 import { brl } from "@/lib/format";
-import { setEventStatus } from "@/app/painel/actions";
+import { cancelEventAction, setEventStatus } from "@/app/painel/actions";
+import { CancelEvent } from "@/components/CancelEvent";
 
 const methodLabel: Record<string, string> = { PIX: "Pix", CREDIT_CARD: "Crédito", DEBIT_CARD: "Débito", FREE: "Gratuito" };
 
@@ -36,7 +37,13 @@ export default async function EventSummary({ params }: { params: { id: string } 
 
   const publish = setEventStatus.bind(null, event.id, "PUBLISHED");
   const unpublish = setEventStatus.bind(null, event.id, "DRAFT");
-  const cancel = setEventStatus.bind(null, event.id, "CANCELLED");
+  const cancellation =
+    event.status === "CANCELLED"
+      ? await db.order.groupBy({ by: ["status"], where: { eventId: event.id, status: { in: ["PAID", "REFUNDING", "REFUNDED"] } }, _count: true })
+      : [];
+  const refundFailures =
+    event.status === "CANCELLED" ? await db.order.count({ where: { eventId: event.id, status: "PAID", refundError: { not: null } } }) : 0;
+  const countOf = (st: string) => cancellation.find((c) => c.status === st)?._count ?? 0;
 
   return (
     <div className="space-y-6">
@@ -51,15 +58,26 @@ export default async function EventSummary({ params }: { params: { id: string } 
             <button className="btn-secondary">Pausar vendas</button>
           </form>
         )}
-        {event.status !== "CANCELLED" && (
-          <form action={cancel}>
-            <button className="btn-danger">Cancelar evento</button>
-          </form>
-        )}
+        {event.status !== "CANCELLED" && <CancelEvent action={cancelEventAction.bind(null, event.id)} paidOrders={paid._count} />}
         <code className="ml-auto rounded-lg bg-white px-3 py-2 text-xs text-slate-500">
           {env.appUrl}/evento/{event.slug}
         </code>
       </div>
+
+      {event.status === "CANCELLED" && (
+        <div className="card border-red-200 bg-red-50 text-sm text-red-900">
+          <p className="font-semibold">Evento cancelado{event.cancelReason ? `: ${event.cancelReason}` : ""}</p>
+          <p>
+            Reembolsos: {countOf("REFUNDED")} concluído(s)
+            {countOf("PAID") + countOf("REFUNDING") > 0 && `, ${countOf("PAID") + countOf("REFUNDING")} em andamento (processados automaticamente)`}.
+          </p>
+          {refundFailures > 0 && (
+            <p className="mt-1">
+              {refundFailures} reembolso(s) recusado(s) pelo gateway até agora. O sistema tenta de novo sozinho; se persistir, fale com o suporte.
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat

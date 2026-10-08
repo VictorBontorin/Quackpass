@@ -2,13 +2,20 @@ import Link from "next/link";
 import type { OrderStatus, Prisma } from "@prisma/client";
 import { requireOwnedEvent } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { env } from "@/lib/env";
 import { brl, dateTime } from "@/lib/format";
 import { refundOrderAction, resendTicketsAction } from "@/app/painel/actions";
 import { StatusBadge } from "@/app/painel/StatusBadge";
 import { OrderRowActions } from "./OrderRowActions";
 
 const PAGE = 50;
-const statuses: OrderStatus[] = ["PAID", "PENDING", "FAILED", "EXPIRED", "REFUNDED"];
+const REFUND_LABEL: Record<string, string> = {
+  BUYER: "Reembolsado pelo cliente",
+  PRODUCER: "Reembolsado por você",
+  ADMIN: "Reembolsado pela plataforma",
+  CANCELLATION: "Evento cancelado",
+};
+const statuses: OrderStatus[] = ["PAID", "PENDING", "FAILED", "EXPIRED", "REFUNDING", "REFUNDED"];
 
 export default async function OrdersPage({
   params,
@@ -83,9 +90,9 @@ export default async function OrdersPage({
               <tr key={o.id}>
                 <td className="whitespace-nowrap text-slate-500">{dateTime(o.createdAt)}</td>
                 <td>
-                  <Link href={`/pedido/${o.id}`} target="_blank" className="font-medium hover:text-brand-600">
+                  <a href={`${env.appUrl}/pedido/${o.id}`} target="_blank" className="font-medium hover:text-brand-600">
                     {o.buyerName}
-                  </Link>
+                  </a>
                   <p className="text-xs text-slate-500">{o.buyerEmail}</p>
                 </td>
                 <td>
@@ -111,7 +118,7 @@ export default async function OrdersPage({
                       total={brl(o.totalCents)}
                     />
                   ) : o.status === "REFUNDED" ? (
-                    <span className="text-xs text-slate-500">{o.refundedBy === "BUYER" ? "Reembolsado pelo cliente" : o.refundedBy === "PRODUCER" ? "Reembolsado por você" : "Estornado"}</span>
+                    <span className="text-xs text-slate-500">{REFUND_LABEL[o.refundedBy ?? ""] ?? "Estornado"}</span>
                   ) : null}
                 </td>
               </tr>

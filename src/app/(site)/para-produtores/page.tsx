@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { env } from "@/lib/env";
 
 export const metadata = { title: "Venda ingressos do seu evento" };
@@ -13,13 +12,16 @@ export default function ForProducers() {
           <p className="mx-auto max-w-2xl text-lg text-slate-600">
             Crie a página do seu evento do seu jeito, divulgue com seus promoters e receba direto na sua conta. Você só paga quando vende.
           </p>
+          <p className="mx-auto max-w-2xl text-sm text-slate-500">
+            Preencha o cadastro e a nossa equipe entra em contato pelo WhatsApp para conhecer a sua casa e liberar o seu acesso.
+          </p>
           <div className="flex justify-center gap-3">
-            <Link href="/produtor/cadastro" className="btn-primary px-6 py-3 text-base">
-              Criar conta grátis
-            </Link>
-            <Link href="/produtor/login" className="btn-secondary px-6 py-3 text-base">
-              Já tenho conta
-            </Link>
+            <a href={`${env.producerUrl}/produtor/cadastro`} className="btn-primary px-6 py-3 text-base">
+              Quero ser parceiro
+            </a>
+            <a href={`${env.producerUrl}/produtor/login`} className="btn-secondary px-6 py-3 text-base">
+              Já sou parceiro
+            </a>
           </div>
         </div>
       </section>

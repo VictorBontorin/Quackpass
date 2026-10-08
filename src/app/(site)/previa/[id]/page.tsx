@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { Checkout } from "@/app/evento/[slug]/Checkout";
+import { Checkout } from "@/app/(site)/evento/[slug]/Checkout";
 import { EventView } from "@/components/EventView";
 import { requireOwnedEvent } from "@/lib/auth";
 import { db } from "@/lib/db";

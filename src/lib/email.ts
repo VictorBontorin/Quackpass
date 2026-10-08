@@ -121,16 +121,21 @@ ${ev.feePayer === "BUYER" && order.feeCents > 0 ? `<tr><td>Taxa de serviço</td>
 export async function sendRefundEmail(orderId: string) {
   const order = await db.order.findUnique({ where: { id: orderId }, include: { event: true } });
   if (!order || order.status !== "REFUNDED") return;
+  const cancelled = order.refundedBy === "CANCELLATION";
   const method =
     order.paymentMethod === "PIX"
       ? "O valor volta para a conta de origem do Pix, normalmente em até 1 dia útil."
       : "O estorno aparece na sua fatura em até 2 faturas, conforme o seu banco.";
   await sendMail({
     to: order.buyerEmail,
-    subject: `Reembolso confirmado: ${order.event.title}`,
+    subject: cancelled ? `Evento cancelado: ${order.event.title} (reembolso feito)` : `Reembolso confirmado: ${order.event.title}`,
     html: layout(
-      "Reembolso confirmado",
-      `<p>Olá, ${esc(order.buyerName.split(" ")[0])}. O reembolso do seu pedido para <b>${esc(order.event.title)}</b> foi feito.</p>
+      cancelled ? "Evento cancelado e reembolso feito" : "Reembolso confirmado",
+      `<p>Olá, ${esc(order.buyerName.split(" ")[0])}. ${
+        cancelled
+          ? `Infelizmente o evento <b>${esc(order.event.title)}</b> foi cancelado pelo organizador${order.event.cancelReason ? ` (${esc(order.event.cancelReason)})` : ""}. Fizemos o reembolso integral automaticamente, você não precisa fazer nada.`
+          : `O reembolso do seu pedido para <b>${esc(order.event.title)}</b> foi feito.`
+      }</p>
 <p>Valor: <b>${brl(order.totalCents)}</b><br>${method}</p>
 <p style="color:#64748b;font-size:13px">Os ingressos deste pedido foram cancelados e não dão mais acesso ao evento.</p>`,
     ),
@@ -145,4 +150,97 @@ export async function safely(fn: () => Promise<unknown>, label: string) {
   } catch (err) {
     console.error(`[email] falha em ${label}`, err);
   }
+}
+
+// ---------- Produtores ----------
+
+const btn = (href: string, label: string) =>
+  `<p style="margin:20px 0"><a href="${href}" style="display:inline-block;background:#1d4ed8;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:bold">${esc(label)}</a></p>`;
+
+type Lead = {
+  id: string;
+  name: string;
+  contactName: string;
+  email: string;
+  phone: string;
+  document: string;
+  city: string | null;
+  state: string | null;
+  instagram: string | null;
+  venueType: string | null;
+  eventsPerMonth: string | null;
+  message: string | null;
+};
+
+/** Avisa o dono da plataforma que chegou um cadastro novo para aprovar. */
+export async function sendNewLeadEmail(p: Lead) {
+  if (!env.adminNotifyEmail) return;
+  const phone = p.phone.replace(/\D/g, "");
+  const rows = [
+    ["Casa / produtora", p.name],
+    ["Responsável", p.contactName],
+    ["WhatsApp", p.phone],
+    ["E-mail", p.email],
+    ["CPF/CNPJ", p.document],
+    ["Cidade", [p.city, p.state].filter(Boolean).join("/")],
+    ["Instagram", p.instagram ?? ""],
+    ["Tipo", p.venueType ?? ""],
+    ["Eventos por mês", p.eventsPerMonth ?? ""],
+    ["Mensagem", p.message ?? ""],
+  ]
+    .filter(([, v]) => v)
+    .map(([k, v]) => `<tr><td style="padding:4px 12px 4px 0;color:#64748b">${esc(k)}</td><td style="padding:4px 0">${esc(v)}</td></tr>`)
+    .join("");
+  await sendMail({
+    to: env.adminNotifyEmail,
+    subject: `Novo cadastro de produtor: ${p.name}`,
+    html: layout(
+      "Novo cadastro para aprovar",
+      `<table>${rows}</table>
+${btn(`${env.adminUrl}/admin/produtores/${p.id}`, "Abrir no painel")}
+<p><a href="https://wa.me/55${phone.replace(/^55/, "")}">Chamar no WhatsApp</a></p>`,
+    ),
+    text: `Novo cadastro: ${p.name} (${p.contactName}) - ${p.phone} - ${p.email}. Abra: ${env.adminUrl}/admin/produtores/${p.id}`,
+  });
+}
+
+export async function sendLeadReceivedEmail(p: { email: string; contactName: string; name: string }) {
+  await sendMail({
+    to: p.email,
+    subject: `Recebemos o seu cadastro, ${p.contactName.split(" ")[0] || p.name}`,
+    html: layout(
+      "Recebemos o seu cadastro",
+      `<p>Olá! Obrigado pelo interesse em vender os ingressos da <b>${esc(p.name)}</b> com a ${esc(env.companyName)}.</p>
+<p>Nossa equipe vai entrar em contato pelo WhatsApp ou e-mail para conhecer a sua casa. Assim que o cadastro for aprovado, avisamos por aqui e você já pode criar os seus eventos.</p>`,
+    ),
+    text: `Recebemos o seu cadastro (${p.name}). Nossa equipe vai entrar em contato em breve.`,
+  });
+}
+
+export async function sendProducerApprovedEmail(p: { email: string; contactName: string; name: string }) {
+  await sendMail({
+    to: p.email,
+    subject: `Cadastro aprovado: bem-vindo à ${env.companyName}!`,
+    html: layout(
+      "Seu cadastro foi aprovado",
+      `<p>Olá, ${esc(p.contactName.split(" ")[0] || p.name)}! A <b>${esc(p.name)}</b> já pode vender ingressos com a gente.</p>
+<p>Próximos passos: cadastre a sua conta bancária em <b>Recebimento</b>, crie o seu primeiro evento e publique.</p>
+${btn(`${env.producerUrl}/painel`, "Acessar o painel")}`,
+    ),
+    text: `Cadastro aprovado! Acesse: ${env.producerUrl}/painel`,
+  });
+}
+
+export async function sendPasswordResetEmail(p: { email: string; name: string }, link: string) {
+  await sendMail({
+    to: p.email,
+    subject: "Redefinir a sua senha",
+    html: layout(
+      "Redefinir senha",
+      `<p>Recebemos um pedido para redefinir a senha da área do produtor (${esc(p.name)}).</p>
+${btn(link, "Criar nova senha")}
+<p style="color:#64748b;font-size:13px">O link vale por 1 hora. Se não foi você, ignore este e-mail: sua senha continua a mesma.</p>`,
+    ),
+    text: `Para criar uma nova senha, acesse (vale por 1 hora): ${link}`,
+  });
 }

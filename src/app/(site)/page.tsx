@@ -10,6 +10,7 @@ export default async function Home({ searchParams }: { searchParams: { q?: strin
   const events = await db.event.findMany({
     where: {
       status: "PUBLISHED",
+      producer: { status: "APPROVED" },
       startsAt: { gte: new Date(Date.now() - 12 * 60 * 60 * 1000) },
       ...(q ? { OR: [{ title: { contains: q, mode: "insensitive" } }, { city: { contains: q, mode: "insensitive" } }, { venueName: { contains: q, mode: "insensitive" } }] } : {}),
     },

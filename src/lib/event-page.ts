@@ -1,5 +1,5 @@
 import type { Batch, TicketType } from "@prisma/client";
-import type { CheckoutTicketType } from "@/app/evento/[slug]/Checkout";
+import type { CheckoutTicketType } from "@/app/(site)/evento/[slug]/Checkout";
 import { env } from "./env";
 import { currentBatch } from "./pricing";
 

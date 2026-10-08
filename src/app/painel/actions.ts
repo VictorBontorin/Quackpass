@@ -11,7 +11,8 @@ import { env } from "@/lib/env";
 import { contentSchema, ACCENT_COLORS } from "@/lib/content";
 import { onlyDigits, parseLocalDateTime, parseMoney, slugify } from "@/lib/format";
 import { sendTicketsEmail } from "@/lib/email";
-import { refundOrder, RefundError } from "@/lib/orders";
+import { cancelEvent, refundOrder, RefundError } from "@/lib/orders";
+import bcrypt from "bcryptjs";
 import { createPagarmeRecipient } from "@/lib/payments/pagarme";
 
 const suffix = customAlphabet("abcdefghijkmnpqrstuvwxyz23456789", 5);
@@ -102,8 +103,9 @@ export async function updateEvent(eventId: string, _prev: ActionState, form: For
   return { ok: "Evento salvo. As mudanças já aparecem na página pública." };
 }
 
-export async function setEventStatus(eventId: string, status: "DRAFT" | "PUBLISHED" | "CANCELLED") {
+export async function setEventStatus(eventId: string, status: "DRAFT" | "PUBLISHED") {
   const { event, producer } = await requireOwnedEvent(eventId);
+  if (event.status === "CANCELLED") return;
   if (status === "PUBLISHED") {
     const hasBatch = await db.batch.count({ where: { ticketType: { eventId: event.id }, active: true } });
     if (!hasBatch) redirect(`/painel/eventos/${event.id}/ingressos?erro=sem-lote`);
@@ -369,4 +371,64 @@ export async function resendTicketsAction(eventId: string, orderId: string, _pre
     return { error: "Falha ao enviar o e-mail" };
   }
   return { ok: `Ingressos reenviados para ${order.buyerEmail}` };
+}
+
+// ---------- Cancelamento ----------
+
+export async function cancelEventAction(eventId: string, _prev: ActionState, form: FormData): Promise<ActionState> {
+  const { event } = await requireOwnedEvent(eventId);
+  if (event.status === "CANCELLED") return { error: "Este evento já foi cancelado" };
+  if (String(form.get("confirm") ?? "").trim().toUpperCase() !== "CANCELAR") return { error: 'Digite CANCELAR para confirmar' };
+  const reason = String(form.get("reason") ?? "").trim().slice(0, 300);
+  const r = await cancelEvent(event.id, reason);
+  revalidatePath(`/evento/${event.slug}`);
+  revalidatePath("/");
+  revalidatePath(`/painel/eventos/${event.id}`, "layout");
+  return {
+    ok:
+      r.remaining === 0
+        ? `Evento cancelado. ${r.refunded} pedido(s) reembolsado(s) e compradores avisados por e-mail.`
+        : `Evento cancelado. ${r.refunded} reembolsado(s) até agora; os ${r.remaining} restantes são processados automaticamente nos próximos minutos.`,
+  };
+}
+
+// ---------- Equipe da portaria ----------
+
+const staffSchema = z.object({
+  name: z.string().trim().min(2, "Informe o nome").max(80),
+  login: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .regex(/^[a-z0-9._-]{4,40}$/, "Login com 4 a 40 letras, números, ponto, hífen ou _ (sem espaço)"),
+  password: z.string().min(6, "Senha com pelo menos 6 caracteres").max(100),
+});
+
+export async function createStaff(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const producer = await requireProducer();
+  const parsed = staffSchema.safeParse(Object.fromEntries(form));
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  if (await db.staffMember.findUnique({ where: { login: parsed.data.login } })) return { error: "Este login já está em uso. Escolha outro." };
+  await db.staffMember.create({
+    data: { producerId: producer.id, name: parsed.data.name, login: parsed.data.login, passwordHash: await bcrypt.hash(parsed.data.password, 10) },
+  });
+  revalidatePath("/painel/equipe");
+  return { ok: `Acesso criado para ${parsed.data.name}. Login: ${parsed.data.login}` };
+}
+
+export async function toggleStaff(staffId: string) {
+  const producer = await requireProducer();
+  const st = await db.staffMember.findFirst({ where: { id: staffId, producerId: producer.id } });
+  if (st) await db.staffMember.update({ where: { id: st.id }, data: { active: !st.active } });
+  revalidatePath("/painel/equipe");
+}
+
+export async function resetStaffPassword(staffId: string, _prev: ActionState, form: FormData): Promise<ActionState> {
+  const producer = await requireProducer();
+  const st = await db.staffMember.findFirst({ where: { id: staffId, producerId: producer.id } });
+  if (!st) return { error: "Membro não encontrado" };
+  const password = String(form.get("password") ?? "");
+  if (password.length < 6) return { error: "Senha com pelo menos 6 caracteres" };
+  await db.staffMember.update({ where: { id: st.id }, data: { passwordHash: await bcrypt.hash(password, 10) } });
+  return { ok: "Senha alterada" };
 }

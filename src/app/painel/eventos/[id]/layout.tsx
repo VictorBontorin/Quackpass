@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireOwnedEvent } from "@/lib/auth";
+import { env } from "@/lib/env";
 import { dateTime } from "@/lib/format";
 import { StatusBadge } from "../../StatusBadge";
 import { Tabs } from "./Tabs";
@@ -18,7 +19,7 @@ export default async function EventLayout({ children, params }: { children: Reac
             {dateTime(event.startsAt)} · {event.venueName} · <StatusBadge status={event.status} />
           </p>
         </div>
-        <Link href={event.status === "DRAFT" ? `/previa/${event.id}` : `/evento/${event.slug}`} target="_blank" className="btn-secondary">
+        <Link href={event.status === "DRAFT" ? `/previa/${event.id}` : `${env.appUrl}/evento/${event.slug}`} target="_blank" className="btn-secondary">
           {event.status === "DRAFT" ? "Pré-visualizar página ↗" : "Ver página pública ↗"}
         </Link>
       </div>

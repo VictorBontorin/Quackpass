@@ -33,9 +33,19 @@ enum DiscountType {
   FIXED
 }
 
+/// Cadastro de produtor: só vende depois de aprovado pelo dono da plataforma
+enum ProducerStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  BLOCKED
+}
+
 enum OrderStatus {
   PENDING
   PAID
+  /// Reembolso em andamento no gateway (trava contra reembolso duplicado)
+  REFUNDING
   FAILED
   EXPIRED
   CANCELLED
@@ -57,7 +67,20 @@ enum TicketStatus {
 
 model Producer {
   id           String   @id @default(cuid())
+  status       ProducerStatus @default(PENDING)
+  /// Nome da casa / produtora
   name         String
+  /// Nome do responsável pelo contato
+  contactName  String   @default("")
+  city         String?
+  state        String?
+  instagram    String?
+  venueType    String?
+  eventsPerMonth String?
+  message      String?
+  /// Anotações internas do dono da plataforma (o produtor não vê)
+  adminNotes   String   @default("")
+  reviewedAt   DateTime?
   email        String   @unique
   passwordHash String
   document     String // CPF ou CNPJ, só dígitos
@@ -76,6 +99,10 @@ model Producer {
   events      Event[]
   advertisers Advertiser[]
   uploads     Upload[]
+  staff       StaffMember[]
+  resetTokens PasswordResetToken[]
+
+  @@index([status, createdAt])
 }
 
 model Event {
@@ -98,6 +125,8 @@ model Event {
   showMap     Boolean     @default(true)
   minAge      Int         @default(18)
   status      EventStatus @default(DRAFT)
+  cancelledAt  DateTime?
+  cancelReason String?
   feePayer    FeePayer    @default(BUYER)
 
   contactPhone     String?
@@ -236,6 +265,8 @@ model Order {
   /// URL de autenticação 3DS (cartão de débito)
   authUrl        String?
   failureReason  String?
+  /// Último erro ao tentar reembolsar (ex.: cancelamento do evento)
+  refundError    String?
 
   expiresAt      DateTime
   paidAt         DateTime?
@@ -282,6 +313,8 @@ model Ticket {
   holderName  String
   status      TicketStatus @default(VALID)
   checkedInAt DateTime?
+  /// Quem validou a entrada (nome do membro da portaria ou do produtor)
+  checkedInBy String?
   createdAt   DateTime     @default(now())
 
   order Order @relation(fields: [orderId], references: [id])
@@ -310,6 +343,46 @@ model Upload {
   createdAt  DateTime @default(now())
 
   producer Producer @relation(fields: [producerId], references: [id])
+
+  @@index([producerId])
+}
+
+/// Equipe de portaria: só faz check-in e consulta compradores dos eventos do produtor
+model StaffMember {
+  id           String    @id @default(cuid())
+  producerId   String
+  name         String
+  /// Login único (minúsculo), ex.: "folks.portaria1"
+  login        String    @unique
+  passwordHash String
+  active       Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+
+  producer Producer @relation(fields: [producerId], references: [id])
+
+  @@index([producerId])
+}
+
+/// Dono(s) da plataforma. Criados pelo script `npm run admin:create`.
+model AdminUser {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+}
+
+/// Link de "esqueci minha senha". Guardamos só o hash do token.
+model PasswordResetToken {
+  id         String    @id @default(cuid())
+  tokenHash  String    @unique
+  producerId String
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  producer Producer @relation(fields: [producerId], references: [id], onDelete: Cascade)
 
   @@index([producerId])
 }
